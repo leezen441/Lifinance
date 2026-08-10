@@ -1,0 +1,177 @@
+@import "tailwindcss";
+
+/* Class-based dark mode (we toggle `.dark` on <html>) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------
+   Design tokens
+   Neon Green accent (#39FF14) on near-black. Light mode supported —
+   in light mode the neon is darkened slightly so text stays legible.
+---------------------------------------------------------------- */
+:root {
+  --bg: #f6f7f5;
+  --bg-grad: #eef1ec;
+  --surface: #ffffff;
+  --surface-2: #f1f3ef;
+  --border: #e2e5df;
+  --text: #10130f;
+  --muted: #6b7280;
+  --neon: #16a34a;          /* accessible neon-ish for light bg */
+  --neon-ink: #0a2e12;      /* text placed ON neon */
+  --neon-glow: 0 0 0 rgba(0, 0, 0, 0);
+  --danger: #dc2626;
+  --warn: #d97706;
+  --ok: #16a34a;
+  --ring: #16a34a;
+}
+
+.dark {
+  --bg: #070a07;
+  --bg-grad: #0b120c;
+  --surface: #101510;
+  --surface-2: #161d17;
+  --border: #232c24;
+  --text: #eef2ec;
+  --muted: #8b968c;
+  --neon: #39ff14;          /* the real thing */
+  --neon-ink: #06210a;
+  --neon-glow: 0 0 24px rgba(57, 255, 20, 0.35);
+  --danger: #ff5c5c;
+  --warn: #ffb020;
+  --ok: #39ff14;
+  --ring: #39ff14;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-neon: var(--neon);
+  --color-neon-ink: var(--neon-ink);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --color-ok: var(--ok);
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    "Noto Sans Thai", "Noto Sans Thai UI", "Leelawadee UI", "IBM Plex Sans Thai",
+    Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono",
+    Menlo, monospace;
+
+  --radius-card: 1.25rem;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  background:
+    radial-gradient(90rem 40rem at 50% -10rem, var(--bg-grad), transparent 70%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--font-sans);
+  min-height: 100dvh;
+  /* room for the mobile tab bar */
+  padding-bottom: env(safe-area-inset-bottom);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Thai text needs a touch more line-height to keep tone marks readable */
+html[lang="th"] body {
+  line-height: 1.7;
+}
+
+/* --------------------------- utilities --------------------------- */
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.glow {
+  box-shadow: var(--neon-glow);
+}
+
+.text-glow {
+  text-shadow: 0 0 18px color-mix(in srgb, var(--neon) 45%, transparent);
+}
+
+.card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+/* Subtle neon edge used on the hero / focus cards */
+.card-neon {
+  position: relative;
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--neon) 9%, transparent),
+      transparent 45%
+    ),
+    var(--surface);
+  border: 1px solid color-mix(in srgb, var(--neon) 35%, var(--border));
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Focus ring that works on both themes */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+@keyframes pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.94); }
+  100% { transform: scale(1); }
+}
+.animate-pop {
+  animation: pop 260ms ease-out;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-rise {
+  animation: rise 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-toast {
+  animation: toast-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

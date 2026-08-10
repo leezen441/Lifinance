@@ -1,0 +1,220 @@
+// Lifinance — server-side schema.
+//
+// The app ships offline-first (localStorage), but the shapes below mirror
+// `src/lib/types.ts` exactly, so syncing is a straight insert with no mapping
+// layer. Postgres is the target; swap the provider for SQLite in dev.
+//
+//   npx prisma migrate dev --name init
+//
+// MONEY: stored as Decimal(14,2). Never Float — binary floating point loses
+// cents and a debt tracker that loses cents is a debt tracker nobody trusts.
+// If you prefer integer minor units (satang/cents), swap Decimal for Int and
+// divide at the edge; both work, but pick one and be consistent.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  settings   UserSettings?
+  debts      Debt[]
+  categories Category[]
+  expenses   Expense[]
+  goals      Goal[]
+  payments   Payment[]
+}
+
+model UserSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  language Language @default(TH)
+  theme    Theme    @default(DARK)
+  currency String   @default("THB") // ISO 4217
+
+  monthlyIncome Decimal @default(0) @db.Decimal(14, 2)
+  payday        Int     @default(25)
+
+  strategy Strategy @default(AUTO)
+
+  // 0.00–1.00. Share of discretionary spending the plan must not touch.
+  lifestyleKeepRatio Decimal @default(0.70) @db.Decimal(3, 2)
+  // Percent of income held back for the unexpected.
+  safetyBufferPct    Decimal @default(5) @db.Decimal(5, 2)
+  // Trailing window (days) the spend profile is learned from.
+  spendWindowDays    Int     @default(60)
+
+  onboarded Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+}
+
+model Debt {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name String
+  kind DebtKind @default(OTHER)
+
+  balance   Decimal @db.Decimal(14, 2) // owed today — what the engine amortises
+  principal Decimal @db.Decimal(14, 2) // original, for the "% paid off" bar
+  // Annual percentage rate, e.g. 19.80 for 19.8%.
+  apr        Decimal @db.Decimal(6, 3)
+  minPayment Decimal @db.Decimal(14, 2)
+  dueDay     Int?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  // Soft delete: a cleared debt stays for the history/celebration.
+  archivedAt DateTime?
+
+  payments Payment[]
+
+  @@index([userId, archivedAt])
+}
+
+// An actual payment made. The engine projects; this records reality, and the
+// difference between the two is the most useful signal in the whole app.
+model Payment {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  debtId String
+  debt   Debt   @relation(fields: [debtId], references: [id], onDelete: Cascade)
+
+  amount    Decimal  @db.Decimal(14, 2)
+  paidOn    DateTime @db.Date
+  isExtra   Boolean  @default(false) // above the minimum
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, paidOn])
+  @@index([debtId, paidOn])
+}
+
+model Category {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Stable key for built-ins ("coffee", "cat_food"); null for user-created.
+  key   String?
+  group CategoryGroup
+  emoji String        @default("•")
+
+  labelEn String?
+  labelTh String?
+
+  // Essential = protected absolutely. Non-essential = protected only up to
+  // the user's lifestyleKeepRatio.
+  isEssential  Boolean @default(false)
+  // One-tap amounts on the quick-add row, ordered.
+  quickAmounts Int[]   @default([])
+
+  isCustom Boolean @default(true)
+  archived Boolean @default(false)
+
+  expenses Expense[]
+
+  @@unique([userId, key])
+  @@index([userId, archived])
+}
+
+model Expense {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  amount Decimal @db.Decimal(14, 2)
+  note   String?
+  // Local calendar day. Deliberately @db.Date, not a timestamp: an 11pm
+  // coffee in Bangkok belongs to that day, not to tomorrow in UTC.
+  date   DateTime @db.Date
+
+  recurrence Recurrence @default(NONE)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, date])
+  @@index([userId, categoryId, date])
+}
+
+model Goal {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name  String
+  emoji String @default("🎯")
+
+  target Decimal   @db.Decimal(14, 2)
+  saved  Decimal   @default(0) @db.Decimal(14, 2)
+  deadline DateTime? @db.Date
+
+  monthlyContribution Decimal @default(0) @db.Decimal(14, 2)
+  // The emergency fund is funded before extra debt payments.
+  isEmergencyFund     Boolean @default(false)
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([userId])
+}
+
+enum Language {
+  EN
+  TH
+}
+
+enum Theme {
+  DARK
+  LIGHT
+  SYSTEM
+}
+
+enum Strategy {
+  AVALANCHE // highest APR first — cheapest
+  SNOWBALL // smallest balance first — fastest wins
+  AUTO // simulate both, use whichever clears first
+}
+
+enum DebtKind {
+  CREDIT_CARD
+  PERSONAL_LOAN
+  AUTO
+  MORTGAGE
+  STUDENT
+  BNPL
+  INFORMAL
+  OTHER
+}
+
+enum CategoryGroup {
+  ESSENTIAL
+  TECH
+  FOOD
+  PET
+  HOBBY
+  TRANSPORT
+  HEALTH
+  OTHER
+}
+
+enum Recurrence {
+  NONE
+  MONTHLY
+}
