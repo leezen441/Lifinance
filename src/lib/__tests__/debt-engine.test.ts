@@ -15,6 +15,8 @@ import {
   totalMinimums,
 } from "../debt-engine";
 import { buildSpendProfile, computeBudget } from "../budget-engine";
+import { DEFAULT_ANSWERS, estimateMonthly, estimateTotal } from "../assessment";
+import { recommendBudget } from "../recommend";
 import type { Category, Debt, Expense, Goal, Settings } from "../types";
 import { toISODate, addDays } from "../date";
 
@@ -258,6 +260,120 @@ test("the budget never reports negative capacity", () => {
   assert.equal(budget.availableExtra, 0);
   assert.ok(budget.surplus < 0, "surplus stays negative so the UI can warn");
   assert.ok(budget.warnings.includes("minimums_exceed_budget"));
+});
+
+/* ------------------------------------------------------------------ */
+/* Assessment + recommendation                                         */
+/* ------------------------------------------------------------------ */
+
+test("the assessment turns answers into a plausible monthly estimate", () => {
+  const estimate = estimateMonthly({
+    ...DEFAULT_ANSWERS,
+    housing: "rent_alone",
+    housingCost: 12_000,
+    utilities: 1_500,
+    drinks: 7,
+    drinkPrice: "mid",
+  });
+  assert.equal(estimate["cat_rent"], 12_000);
+  assert.equal(estimate["cat_utilities"], 1_500);
+  // 7 cups/wk * 95 * 4.35 weeks ≈ 2,891, split 70/30 across coffee + matcha.
+  const drinks = estimate["cat_coffee"] + estimate["cat_matcha"];
+  assert.ok(Math.abs(drinks - 2_891) < 15, `got ${drinks}`);
+  assert.ok(estimateTotal(estimate) > 12_000);
+});
+
+test("cooking habit moves groceries and eating out in opposite directions", () => {
+  const cooks = estimateMonthly({ ...DEFAULT_ANSWERS, cooking: "mostly" });
+  const doesnt = estimateMonthly({ ...DEFAULT_ANSWERS, cooking: "never" });
+  assert.ok(cooks["cat_groceries"] > doesnt["cat_groceries"]);
+  assert.ok(cooks["cat_eating_out"] < doesnt["cat_eating_out"]);
+});
+
+test("the baseline carries the plan until real data takes over", () => {
+  const baseline = { cat_coffee: 3_000 };
+  // Day one: nothing logged, so the estimate is the whole picture.
+  const empty = buildSpendProfile([], categories, 30, NOW, baseline);
+  assert.equal(Math.round(empty.lifestyleMonthly), 3_000);
+  assert.equal(empty.dataTrust, 0);
+  assert.equal(empty.usingBaseline, true);
+
+  // Three weeks in, tracked data has fully replaced it.
+  const tracked = Array.from({ length: 21 }, (_, i) =>
+    expense({ id: `c${i}`, categoryId: "c_coffee", amount: 100, date: toISODate(addDays(NOW, -i)) }),
+  );
+  const mature = buildSpendProfile(tracked, categories, 30, NOW, baseline);
+  assert.equal(mature.dataTrust, 1);
+  assert.equal(mature.usingBaseline, false);
+  assert.ok(Math.abs(mature.lifestyleMonthly - 3_044) < 5, `got ${mature.lifestyleMonthly}`);
+});
+
+test("recommendation leaves room for savings and debt, and flags the gap", () => {
+  const expenses: Expense[] = [
+    expense({ id: "r", categoryId: "c_rent", amount: 10_000, date: toISODate(addDays(NOW, -1)), recurrence: "monthly" }),
+    // ~24,350/mo of discretionary spending on a 40k income.
+    ...Array.from({ length: 30 }, (_, i) =>
+      expense({ id: `c${i}`, categoryId: "c_coffee", amount: 800, date: toISODate(addDays(NOW, -i)) }),
+    ),
+  ];
+  const profile = buildSpendProfile(expenses, categories, 30, NOW);
+  const debts = [debt({ id: "a", balance: 60_000, apr: 22, minPayment: 3_000 })];
+  const isEssential = (id: string) => id === "c_rent";
+
+  const rec = recommendBudget(40_000, profile, debts, [], isEssential);
+
+  assert.ok(rec.savings > 0, "must always carve out savings");
+  assert.ok(rec.debtPayment >= 3_000, "must at least cover minimums");
+  assert.ok(rec.recommendedLiving < 40_000, "living budget cannot be the whole income");
+  assert.ok(rec.gap > 0, "should detect overspending");
+  assert.ok(rec.notes.includes("high_apr_debt"));
+  assert.ok(rec.notes.includes("no_emergency_fund"));
+
+  // Rent is essential, so it is never in the trim list.
+  const rent = rec.perCategory.find((c) => c.categoryId === "c_rent");
+  assert.equal(rent?.delta, 0);
+  const coffee = rec.perCategory.find((c) => c.categoryId === "c_coffee");
+  assert.ok(coffee && coffee.delta < 0, "discretionary spending absorbs the cut");
+  assert.ok(coffee!.recommended >= coffee!.current * 0.5, "never cuts more than half");
+});
+
+test("a comfortable budget is reported as comfortable", () => {
+  const expenses: Expense[] = [
+    expense({ id: "r", categoryId: "c_rent", amount: 8_000, date: toISODate(addDays(NOW, -1)), recurrence: "monthly" }),
+    ...Array.from({ length: 30 }, (_, i) =>
+      expense({ id: `c${i}`, categoryId: "c_coffee", amount: 80, date: toISODate(addDays(NOW, -i)) }),
+    ),
+  ];
+  const profile = buildSpendProfile(expenses, categories, 30, NOW);
+  const goals: Goal[] = [
+    {
+      id: "g",
+      name: "Emergency",
+      emoji: "🛟",
+      target: 100_000,
+      saved: 90_000,
+      monthlyContribution: 0,
+      isEmergencyFund: true,
+      createdAt: "2026-01-01",
+    },
+  ];
+  const rec = recommendBudget(80_000, profile, [], goals, (id) => id === "c_rent");
+  assert.equal(rec.gap, 0);
+  assert.ok(rec.notes.includes("comfortable"));
+  assert.ok(!rec.notes.includes("no_emergency_fund"), "90k covers >3 months of burn");
+});
+
+test("housing above 30% of income is called out", () => {
+  const expenses: Expense[] = [
+    expense({ id: "r", categoryId: "cat_rent", amount: 20_000, date: toISODate(addDays(NOW, -1)), recurrence: "monthly" }),
+  ];
+  const cats = [
+    { ...categories[0], id: "cat_rent" },
+    categories[1],
+  ];
+  const profile = buildSpendProfile(expenses, cats, 30, NOW);
+  const rec = recommendBudget(50_000, profile, [], [], (id) => id === "cat_rent");
+  assert.ok(rec.notes.includes("housing_heavy"));
 });
 
 test("essentials are never squeezed, whatever the keep ratio", () => {

@@ -10,6 +10,7 @@ import { RealityCheck } from "@/components/dashboard/RealityCheck";
 import { GoalsStrip } from "@/components/dashboard/GoalsStrip";
 import { SpendingBreakdown } from "@/components/dashboard/SpendingBreakdown";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
+import { BudgetAdvice } from "@/components/dashboard/BudgetAdvice";
 
 /**
  * Dashboard.
@@ -42,6 +43,7 @@ export default function DashboardPage() {
 
       <div className="grid gap-4 sm:gap-5 lg:grid-cols-2 lg:items-start">
         <div className="space-y-4 sm:space-y-5">
+          <BudgetAdvice />
           <PayoffPlanCard />
           <RealityCheck />
         </div>

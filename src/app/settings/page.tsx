@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Download, RotateCcw, Sparkles, Upload } from "lucide-react";
+import Link from "next/link";
+import { ClipboardCheck, Download, RotateCcw, Sparkles, Upload } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Label, MoneyInput, Select, Slider } from "@/components/ui/Field";
@@ -19,9 +20,9 @@ const THEMES: ThemeMode[] = ["dark", "light", "system"];
 const STRATEGIES: Strategy[] = ["auto", "avalanche", "snowball"];
 
 export default function SettingsPage() {
-  const { settings, updateSettings, loadDemo, resetAll, exportJSON, importJSON } =
+  const { settings, updateSettings, loadDemo, resetAll, exportJSON, importJSON, baseline } =
     useFinance();
-  const { t, percent } = useI18n();
+  const { t, percent, dayMonth } = useI18n();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   /**
@@ -212,6 +213,21 @@ export default function SettingsPage() {
             ))}
           </Select>
         </div>
+      </Card>
+
+      <Card>
+        <CardHeader title={t("assess.title")} subtitle={t("assess.subtitle")} />
+        <Link href="/assessment">
+          <Button variant={baseline ? "outline" : "neon"}>
+            <ClipboardCheck size={15} />
+            {baseline ? t("assess.retake") : t("assess.cta")}
+          </Button>
+        </Link>
+        {baseline ? (
+          <p className="mt-2 text-[12px] text-muted">
+            {t("assess.estimateBadge")} · {dayMonth(baseline.createdAt.slice(0, 10))}
+          </p>
+        ) : null}
       </Card>
 
       <Card>

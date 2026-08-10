@@ -31,22 +31,28 @@ import type {
   Language,
   PayoffPlan,
   Settings,
+  SpendingBaseline,
   SpendProfile,
   StrategyComparison,
   ThemeMode,
 } from "@/lib/types";
+import type { BudgetRecommendation } from "@/lib/recommend";
 import { emptyState, demoState, STORAGE_KEY, STATE_VERSION } from "@/lib/seed";
 import { buildPlan, minimumsOnlyPlan } from "@/lib/debt-engine";
 import { buildSpendProfile, computeBudget } from "@/lib/budget-engine";
+import { recommendBudget } from "@/lib/recommend";
 import { todayISO } from "@/lib/date";
 import { uid } from "@/lib/utils";
 
 interface Derived {
   profile: SpendProfile;
   budget: BudgetBreakdown;
+  /** "How much should I spend each month" — see lib/recommend.ts */
+  recommendation: BudgetRecommendation;
   plan: PayoffPlan;
   comparison: StrategyComparison;
-  baseline: PayoffPlan;
+  /** The plan if you only ever pay minimums — what `monthsSaved` compares to. */
+  minimumsPlan: PayoffPlan;
   /** Months the extra payment buys versus paying minimums only. */
   monthsSaved: number;
   interestSaved: number;
@@ -61,6 +67,10 @@ interface FinanceValue extends Derived {
   expenses: Expense[];
   debts: Debt[];
   goals: Goal[];
+  baseline?: SpendingBaseline;
+
+  /** Save the assessment result. Clearing it falls back to tracked data only. */
+  setBaseline: (baseline: SpendingBaseline | undefined) => void;
 
   updateSettings: (patch: Partial<Settings>) => void;
   setLanguage: (lang: Language) => void;
@@ -256,6 +266,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [patch],
   );
 
+  const setBaseline = useCallback<FinanceValue["setBaseline"]>(
+    (baseline) => patch((s) => ({ ...s, baseline })),
+    [patch],
+  );
+
   const loadDemo = useCallback(() => setState(demoState()), []);
 
   const resetAll = useCallback(() => {
@@ -293,9 +308,23 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const { settings, categories, expenses, debts, goals } = state;
 
   const profile = useMemo(
-    () => buildSpendProfile(expenses, categories, settings.spendWindowDays),
-    [expenses, categories, settings.spendWindowDays],
+    () =>
+      buildSpendProfile(
+        expenses,
+        categories,
+        settings.spendWindowDays,
+        new Date(),
+        state.baseline?.monthlyByCategory,
+      ),
+    [expenses, categories, settings.spendWindowDays, state.baseline],
   );
+
+  const recommendation = useMemo(() => {
+    const essentialById = new Map(categories.map((c) => [c.id, c.isEssential]));
+    return recommendBudget(settings.monthlyIncome, profile, debts, goals, (id) =>
+      essentialById.get(id) ?? false,
+    );
+  }, [settings.monthlyIncome, profile, debts, goals, categories]);
 
   const budget = useMemo(
     () => computeBudget(settings, profile, debts, goals),
@@ -307,17 +336,17 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [debts, budget.availableExtra, settings.strategy],
   );
 
-  const baseline = useMemo(() => minimumsOnlyPlan(debts), [debts]);
+  const minimumsPlan = useMemo(() => minimumsOnlyPlan(debts), [debts]);
 
   const monthsSaved = useMemo(() => {
-    if (!plan.feasible || !baseline.feasible) return 0;
-    return Math.max(0, baseline.monthsToFreedom - plan.monthsToFreedom);
-  }, [plan, baseline]);
+    if (!plan.feasible || !minimumsPlan.feasible) return 0;
+    return Math.max(0, minimumsPlan.monthsToFreedom - plan.monthsToFreedom);
+  }, [plan, minimumsPlan]);
 
   const interestSaved = useMemo(() => {
-    if (!plan.feasible || !baseline.feasible) return 0;
-    return Math.max(0, baseline.totalInterest - plan.totalInterest);
-  }, [plan, baseline]);
+    if (!plan.feasible || !minimumsPlan.feasible) return 0;
+    return Math.max(0, minimumsPlan.totalInterest - plan.totalInterest);
+  }, [plan, minimumsPlan]);
 
   const value = useMemo<FinanceValue>(
     () => ({
@@ -328,11 +357,14 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       expenses,
       debts,
       goals,
+      baseline: state.baseline,
+      setBaseline,
       profile,
       budget,
+      recommendation,
       plan,
       comparison,
-      baseline,
+      minimumsPlan,
       monthsSaved,
       interestSaved,
       updateSettings,
@@ -358,7 +390,8 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       hydrated, state, settings, categories, expenses, debts, goals,
-      profile, budget, plan, comparison, baseline, monthsSaved, interestSaved,
+      setBaseline, profile, budget, recommendation, plan, comparison,
+      minimumsPlan, monthsSaved, interestSaved,
       updateSettings, setLanguage, setTheme, addExpense, updateExpense, removeExpense,
       addCategory, updateCategory, removeCategory, addDebt, updateDebt, removeDebt,
       addGoal, updateGoal, removeGoal, contributeToGoal, loadDemo, resetAll,

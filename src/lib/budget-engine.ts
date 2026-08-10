@@ -32,6 +32,13 @@ import { totalMinimums } from "./debt-engine";
 const MIN_TRUSTED_DAYS = 10;
 
 /**
+ * Days of tracking after which real data fully replaces the assessment
+ * estimate. Before that the two are blended, so the plan is usable on day one
+ * and never lurches when the estimate hands over.
+ */
+const BASELINE_HANDOVER_DAYS = 21;
+
+/**
  * Summarise real spending over a trailing window.
  *
  * Monthly recurring items (rent, subscriptions) are counted once per month
@@ -43,6 +50,8 @@ export function buildSpendProfile(
   categories: Category[],
   windowDays: number,
   now: Date = new Date(),
+  /** Per-category monthly estimate from the lifestyle assessment, if taken. */
+  baseline?: Record<string, number>,
 ): SpendProfile {
   const catById = new Map(categories.map((c) => [c.id, c]));
   const cutoff = addDays(now, -(windowDays - 1));
@@ -85,16 +94,37 @@ export function buildSpendProfile(
   const byCategory: CategorySpend[] = [];
   let essentialMonthly = 0;
   let lifestyleMonthly = 0;
+  let recurringMonthly = 0;
 
-  const categoryIds = new Set([...totals.keys(), ...recurringByCategory.keys()]);
+  /**
+   * How much to trust tracked data versus the assessment estimate. Ramps from
+   * 0 to 1 over the first three weeks of tracking. Without a baseline it is
+   * always 1 — real data is all there is.
+   */
+  const trust = baseline ? Math.min(1, historyDays / BASELINE_HANDOVER_DAYS) : 1;
+
+  const categoryIds = new Set([
+    ...totals.keys(),
+    ...recurringByCategory.keys(),
+    ...Object.keys(baseline ?? {}),
+  ]);
+
   for (const categoryId of categoryIds) {
     const t = totals.get(categoryId) ?? { total: 0, count: 0 };
     const recurring = recurringByCategory.get(categoryId) ?? 0;
     // one-off spend scaled to a month + the fixed monthly amount
-    const monthlyAvg = (t.total / effectiveDays) * DAYS_PER_MONTH + recurring;
+    const tracked = (t.total / effectiveDays) * DAYS_PER_MONTH + recurring;
+    const estimated = baseline?.[categoryId] ?? 0;
+
+    const monthlyAvg = baseline ? tracked * trust + estimated * (1 - trust) : tracked;
+
     const isEssential = catById.get(categoryId)?.isEssential ?? false;
     if (isEssential) essentialMonthly += monthlyAvg;
     else lifestyleMonthly += monthlyAvg;
+
+    // Recurring share is scaled the same way so `variableMonthly` stays a
+    // like-for-like comparison against day-to-day spending.
+    recurringMonthly += baseline ? recurring * trust : recurring;
 
     byCategory.push({
       categoryId,
@@ -106,7 +136,6 @@ export function buildSpendProfile(
   }
 
   const totalMonthly = essentialMonthly + lifestyleMonthly;
-  const recurringMonthly = [...recurringByCategory.values()].reduce((s, v) => s + v, 0);
   const variableMonthly = Math.max(0, totalMonthly - recurringMonthly);
   for (const c of byCategory) {
     c.share = totalMonthly > 0 ? c.monthlyAvg / totalMonthly : 0;
@@ -138,6 +167,9 @@ export function buildSpendProfile(
     last7,
     byCategory,
     hasEnoughData: historyDays >= MIN_TRUSTED_DAYS && inWindow.length >= 5,
+    /** 0 = numbers are pure estimate, 1 = pure tracked data. */
+    dataTrust: trust,
+    usingBaseline: Boolean(baseline) && trust < 1,
   };
 }
 

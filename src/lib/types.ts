@@ -135,6 +135,8 @@ export interface AppState {
   expenses: Expense[];
   debts: Debt[];
   goals: Goal[];
+  /** Undefined until the user takes the lifestyle assessment. */
+  baseline?: SpendingBaseline;
 }
 
 /* ------------------------------------------------------------------ */
@@ -218,6 +220,19 @@ export interface SpendProfile {
   byCategory: CategorySpend[];
   /** False when there is too little history to trust the averages. */
   hasEnoughData: boolean;
+  /** 0 = figures come from the assessment estimate, 1 = from tracked data. */
+  dataTrust: number;
+  /** True while the assessment estimate is still contributing. */
+  usingBaseline: boolean;
+}
+
+/** Output of the lifestyle assessment, stored so the plan works on day one. */
+export interface SpendingBaseline {
+  createdAt: string;
+  /** `{ categoryId: estimated monthly amount }` */
+  monthlyByCategory: Record<string, number>;
+  /** Kept so the quiz can be reopened pre-filled instead of restarted. */
+  answers: unknown;
 }
 
 export interface BudgetBreakdown {
