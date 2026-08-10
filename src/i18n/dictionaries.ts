@@ -297,6 +297,21 @@ export const en = {
     start: "Start",
     skip: "Skip for now",
   },
+
+  install: {
+    title: "Install Lifinance",
+    body: "Put it on your home screen — full screen, opens instantly, works with no signal.",
+    cta: "Install",
+    later: "Not now",
+    iosTitle: "Add to Home Screen",
+    iosBody: "Two taps in Safari and it becomes an app:",
+    iosStep1: "Tap the Share button below",
+    iosStep2: "Scroll down, choose “Add to Home Screen”",
+    done: "Done — check your home screen 🎉",
+    alreadyInstalled: "Running as an installed app",
+    sectionTitle: "Install as an app",
+    sectionHint: "Works offline. Your data stays on this device either way.",
+  },
 } as const;
 
 /**
@@ -589,6 +604,21 @@ export const th = {
     keepQ: "อยากกันเงินเพื่อความสุขไว้เท่าไหร่?",
     start: "เริ่มเลย",
     skip: "ข้ามไปก่อน",
+  },
+
+  install: {
+    title: "ติดตั้ง Lifinance",
+    body: "เพิ่มลงหน้าจอโฮม เปิดเต็มจอ เข้าได้ทันที ใช้ได้แม้ไม่มีเน็ต",
+    cta: "ติดตั้ง",
+    later: "ไว้ก่อน",
+    iosTitle: "เพิ่มลงหน้าจอโฮม",
+    iosBody: "บน Safari แค่สองขั้นตอนก็กลายเป็นแอป:",
+    iosStep1: "แตะปุ่มแชร์ด้านล่าง",
+    iosStep2: "เลื่อนลงแล้วเลือก “เพิ่มไปยังหน้าจอโฮม”",
+    done: "เสร็จแล้ว — ดูที่หน้าจอโฮมได้เลย 🎉",
+    alreadyInstalled: "กำลังใช้งานแบบแอปที่ติดตั้งแล้ว",
+    sectionTitle: "ติดตั้งเป็นแอป",
+    sectionHint: "ใช้ได้แม้ไม่มีเน็ต ข้อมูลอยู่ในเครื่องคุณเหมือนเดิม",
   },
 } satisfies DeepStringMap<typeof en>;
 

@@ -5,6 +5,7 @@ import { I18nProvider } from "@/i18n/I18nProvider";
 import { ToastProvider } from "@/components/ui/Toast";
 import { ThemeApplier } from "@/components/ThemeToggle";
 import { AppShell } from "@/components/AppShell";
+import { ServiceWorkerRegistrar } from "@/components/pwa/ServiceWorkerRegistrar";
 
 /**
  * i18n reads its language from the finance store, so it has to sit inside it.
@@ -19,6 +20,7 @@ function Localised({ children }: { children: React.ReactNode }) {
       currency={settings.currency}
     >
       <ThemeApplier />
+      <ServiceWorkerRegistrar />
       <ToastProvider>
         <AppShell>
           {/* Until localStorage is read, render a calm skeleton rather than

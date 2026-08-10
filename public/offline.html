@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Lifinance — Offline</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 2rem;
+        background: radial-gradient(60rem 30rem at 50% -8rem, #0b120c, transparent 70%), #070a07;
+        color: #eef2ec;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+          "Noto Sans Thai", "Leelawadee UI", sans-serif;
+        text-align: center;
+      }
+      .mark {
+        width: 64px; height: 64px;
+        margin: 0 auto 1.5rem;
+        display: grid; place-items: center;
+        border-radius: 1.125rem;
+        background: #39ff14;
+        box-shadow: 0 0 28px rgba(57, 255, 20, 0.4);
+      }
+      h1 { font-size: 1.25rem; margin: 0 0 0.5rem; letter-spacing: -0.01em; }
+      p { margin: 0 0 0.35rem; color: #8b968c; font-size: 0.9rem; line-height: 1.7; }
+      button {
+        margin-top: 1.75rem;
+        padding: 0.75rem 1.5rem;
+        border: 0; border-radius: 0.875rem;
+        background: #39ff14; color: #06210a;
+        font: inherit; font-weight: 600;
+        cursor: pointer;
+      }
+      button:active { transform: scale(0.98); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
+          <path d="M4 18L9.5 11.5L14 15L20 6" stroke="#06210a" stroke-width="2.6"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+      <h1>ยังไม่มีอินเทอร์เน็ต</h1>
+      <p>ข้อมูลของคุณยังอยู่ครบในเครื่อง ไม่หายไปไหน</p>
+      <p>Your data is safe on this device — reconnect to continue.</p>
+      <button onclick="location.reload()">ลองใหม่ · Retry</button>
+    </main>
+  </body>
+</html>

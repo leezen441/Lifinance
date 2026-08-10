@@ -45,6 +45,52 @@ gained or lost as they drag it.
 
 ---
 
+## Install it as a phone app
+
+Lifinance is a **PWA**, so it installs to the home screen from the browser — no
+app store, no build step, no native wrapper. Once installed it runs full screen
+with its own icon and works with no signal.
+
+- **Android / Chrome** — an Install banner appears on the dashboard; or menu → *Install app*.
+- **iPhone / iPad (Safari)** — Share → *Add to Home Screen*. Apple provides no
+  programmatic install, so the app shows those two steps instead of a button.
+- Either way there is also a permanent **Settings → Install as an app** section.
+
+What installing changes:
+
+| | Browser tab | Installed |
+| --- | --- | --- |
+| Chrome/Safari UI | visible | gone — full screen |
+| Launch | type the URL | home-screen icon |
+| Offline | needs the network | opens and works |
+| Icon long-press | — | shortcuts to *Log a spend* / *Debts* |
+
+Offline behaviour is handled by [`public/sw.js`](public/sw.js): navigations are
+**network-first** (so a new deploy is never stuck behind a stale cache),
+`/_next/static/*` is cache-first (those filenames are fingerprinted and
+immutable), and `/` is precached so the app opens on the first launch after
+install. A route you've never visited, opened offline, gets a branded bilingual
+offline page rather than a browser error.
+
+Three things in that file are load-bearing and easy to get wrong:
+
+- **`ignoreVary: true` on every cache lookup.** Next's App Router sends
+  `Vary: rsc, next-router-state-tree, …`; the Cache API honours `Vary`, so
+  without this every offline lookup misses and the user gets the offline page
+  instead of the app they already have cached.
+- **`response.clone()` must happen synchronously.** Cloning inside
+  `caches.open().then()` runs after the body has started streaming to the page,
+  so it throws and the cache write is silently lost.
+- **Never resolve a handler to `undefined`** — `respondWith(undefined)` reaches
+  the page as a thrown `TypeError`, which is much harder to diagnose than a 503.
+
+Icons are generated from a single SVG source by
+[`scripts/generate-icons.mjs`](scripts/generate-icons.mjs) (`npm run icons`).
+The outputs are committed, so a normal build needs neither the script nor
+`sharp`. Two variants exist because the platforms mask differently: `any` draws
+its own squircle, `maskable` is full-bleed with the mark inside the 80% safe
+zone so Android can crop it to a circle or teardrop without clipping.
+
 ## Tech stack
 
 | Layer | Choice | Why |
@@ -69,7 +115,12 @@ npm run dev          # dev server
 npm run build        # production build
 npm run typecheck    # tsc --noEmit
 npm run test:engine  # 20 tests over the debt + budget engines
+npm run icons        # regenerate app icons from the SVG source
 ```
+
+> The service worker registers in **production only**. In dev it would sit in
+> front of Next's HMR endpoints and serve stale chunks, which looks exactly
+> like a broken build. To test offline behaviour, use `npm run build && npm start`.
 
 ---
 

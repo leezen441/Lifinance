@@ -6,6 +6,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Label, MoneyInput, Select, Slider } from "@/components/ui/Field";
 import { LanguageToggle } from "@/components/LanguageToggle";
+import { InstallSection } from "@/components/pwa/InstallPrompt";
 import { useFinance } from "@/store/FinanceProvider";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useToast } from "@/components/ui/Toast";
@@ -211,6 +212,14 @@ export default function SettingsPage() {
             ))}
           </Select>
         </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title={t("install.sectionTitle")}
+          subtitle={t("install.body")}
+        />
+        <InstallSection />
       </Card>
 
       <Card>

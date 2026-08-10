@@ -69,7 +69,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* ---------------------------- content ---------------------------- */}
       <div className="min-w-0 flex-1">
-        <header className="sticky top-0 z-30 border-b border-border bg-bg/80 backdrop-blur-xl lg:hidden">
+        {/* pt-safe: with apple-mobile-web-app-status-bar-style=black-translucent
+            the installed app paints under the iOS status bar, so the header
+            has to reserve that space itself or it lands under the clock. */}
+        <header className="sticky top-0 z-30 border-b border-border bg-bg/80 pt-[env(safe-area-inset-top)] backdrop-blur-xl lg:hidden">
           <div className="flex items-center justify-between px-4 py-3">
             <Link href="/" className="flex items-center gap-2">
               <Logo size={26} />

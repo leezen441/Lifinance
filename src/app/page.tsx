@@ -9,6 +9,7 @@ import { PayoffPlanCard } from "@/components/dashboard/PayoffPlanCard";
 import { RealityCheck } from "@/components/dashboard/RealityCheck";
 import { GoalsStrip } from "@/components/dashboard/GoalsStrip";
 import { SpendingBreakdown } from "@/components/dashboard/SpendingBreakdown";
+import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 
 /**
  * Dashboard.
@@ -28,6 +29,7 @@ export default function DashboardPage() {
     <div className="space-y-4 sm:space-y-5">
       <Greeting />
       <SetupPrompt />
+      <InstallPrompt />
 
       {/* Hero — always full width */}
       <FreedomCard />
