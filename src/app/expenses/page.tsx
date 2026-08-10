@@ -11,11 +11,39 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { categoryLabel } from "@/lib/category";
 import { addDays, todayISO, toISODate } from "@/lib/date";
 import { monthPace } from "@/lib/budget-engine";
+import { useToast } from "@/components/ui/Toast";
+import type { Expense } from "@/lib/types";
 
 export default function ExpensesPage() {
-  const { expenses, categories, removeExpense, profile } = useFinance();
+  const { expenses, categories, removeExpense, addExpense, profile } = useFinance();
   const { t, lang, money, dayMonth } = useI18n();
+  const { toast } = useToast();
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [editing, setEditingState] = useState<Expense | null>(null);
+
+  const setEditing = (expense: Expense) => {
+    setEditingState(expense);
+    setSheetOpen(true);
+  };
+
+  /** Delete straight from the list, recoverable for 6 seconds. */
+  const remove = (expense: Expense) => {
+    removeExpense(expense.id);
+    toast(`${t("expenses.deleted")} · ${money(expense.amount)}`, {
+      action: {
+        label: t("common.undo"),
+        onClick: () =>
+          addExpense({
+            categoryId: expense.categoryId,
+            amount: expense.amount,
+            note: expense.note,
+            date: expense.date,
+            recurrence: expense.recurrence,
+          }),
+      },
+      duration: 6000,
+    });
+  };
 
   const today = todayISO();
   const weekStart = toISODate(addDays(new Date(), -6));
@@ -48,7 +76,14 @@ export default function ExpensesPage() {
           </h1>
           <p className="mt-0.5 text-[13px] text-muted">{t("expenses.subtitle")}</p>
         </div>
-        <Button variant="neon" size="md" onClick={() => setSheetOpen(true)}>
+        <Button
+          variant="neon"
+          size="md"
+          onClick={() => {
+            setEditingState(null);
+            setSheetOpen(true);
+          }}
+        >
           <Plus size={16} />
           {t("expenses.add")}
         </Button>
@@ -79,7 +114,7 @@ export default function ExpensesPage() {
       <QuickAdd />
 
       <Card>
-        <CardHeader title={t("expenses.recent")} />
+        <CardHeader title={t("expenses.recent")} subtitle={t("expenses.editHint")} />
         {byDay.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-border p-8 text-center text-[13px] text-muted">
             {t("expenses.empty")}
@@ -102,31 +137,41 @@ export default function ExpensesPage() {
                     {items.map((e) => {
                       const category = categories.find((c) => c.id === e.categoryId);
                       return (
-                        <li
-                          key={e.id}
-                          className="group flex items-center gap-3 rounded-xl px-2 py-1.5 transition-colors hover:bg-surface-2"
-                        >
-                          <span className="text-base leading-none">
-                            {category?.emoji ?? "•"}
-                          </span>
-                          <span className="min-w-0 flex-1 truncate text-[13px]">
-                            {categoryLabel(category, lang)}
-                            {e.note ? (
-                              <span className="text-muted"> · {e.note}</span>
-                            ) : null}
-                            {e.recurrence === "monthly" ? (
-                              <Repeat size={11} className="ml-1.5 inline text-muted" />
-                            ) : null}
-                          </span>
-                          <span className="tabular shrink-0 text-[13px] font-semibold">
-                            {money(e.amount)}
-                          </span>
+                        <li key={e.id} className="group flex items-center gap-1">
+                          {/* The row itself opens the editor — fixing a wrong
+                              amount is more common than deleting outright. */}
                           <button
-                            onClick={() => removeExpense(e.id)}
-                            className="shrink-0 rounded-md p-1 text-muted opacity-0 transition-all hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"
-                            aria-label={t("common.delete")}
+                            onClick={() => setEditing(e)}
+                            className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2.5 text-left transition-colors hover:bg-surface-2 active:bg-surface-2"
                           >
-                            <Trash2 size={13} />
+                            <span className="text-base leading-none">
+                              {category?.emoji ?? "•"}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-[13px]">
+                              {categoryLabel(category, lang)}
+                              {e.note ? (
+                                <span className="text-muted"> · {e.note}</span>
+                              ) : null}
+                              {e.recurrence === "monthly" ? (
+                                <Repeat size={11} className="ml-1.5 inline text-muted" />
+                              ) : null}
+                            </span>
+                            <span className="tabular shrink-0 text-[13px] font-semibold">
+                              {money(e.amount)}
+                            </span>
+                          </button>
+                          {/* Always visible on touch — `group-hover` alone made
+                              this unreachable on phones, where there is no
+                              hover state to trigger it. */}
+                          <button
+                            onClick={() => remove(e)}
+                            // h-11/w-11 = 44px, the minimum reliable touch
+                            // target. Shrinks on desktop where it's a hover
+                            // affordance driven by a precise pointer.
+                            className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-muted transition-all hover:bg-danger/10 hover:text-danger sm:h-9 sm:w-9 sm:opacity-0 sm:focus-visible:opacity-100 sm:group-hover:opacity-100"
+                            aria-label={`${t("common.delete")} ${categoryLabel(category, lang)} ${money(e.amount)}`}
+                          >
+                            <Trash2 size={15} />
                           </button>
                         </li>
                       );
@@ -139,7 +184,14 @@ export default function ExpensesPage() {
         )}
       </Card>
 
-      <AddExpenseSheet open={sheetOpen} onClose={() => setSheetOpen(false)} />
+      <AddExpenseSheet
+        open={sheetOpen}
+        onClose={() => {
+          setSheetOpen(false);
+          setEditingState(null);
+        }}
+        editing={editing}
+      />
     </div>
   );
 }

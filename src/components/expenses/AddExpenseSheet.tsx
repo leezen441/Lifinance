@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, MoneyInput, Select, Toggle } from "@/components/ui/Field";
@@ -11,17 +12,21 @@ import { categoryLabel, GROUP_ORDER, groupLabel } from "@/lib/category";
 import { CURRENCY_SYMBOL } from "@/lib/format";
 import { todayISO } from "@/lib/date";
 import { num } from "@/lib/utils";
+import type { Expense } from "@/lib/types";
 
 export function AddExpenseSheet({
   open,
   onClose,
   initialCategoryId,
+  editing,
 }: {
   open: boolean;
   onClose: () => void;
   initialCategoryId?: string;
+  /** When set, the sheet edits this entry instead of creating a new one. */
+  editing?: Expense | null;
 }) {
-  const { categories, addExpense, settings } = useFinance();
+  const { categories, addExpense, updateExpense, removeExpense, settings } = useFinance();
   const { t, lang, money } = useI18n();
   const { toast } = useToast();
 
@@ -34,12 +39,20 @@ export function AddExpenseSheet({
 
   useEffect(() => {
     if (!open) return;
+    if (editing) {
+      setCategoryId(editing.categoryId);
+      setAmount(String(editing.amount));
+      setNote(editing.note ?? "");
+      setDate(editing.date);
+      setRecurring(editing.recurrence === "monthly");
+      return;
+    }
     setCategoryId(initialCategoryId ?? active[0]?.id ?? "");
     setAmount("");
     setNote("");
     setDate(todayISO());
     setRecurring(false);
-  }, [open, initialCategoryId, active]);
+  }, [open, initialCategoryId, active, editing]);
 
   const category = active.find((c) => c.id === categoryId);
   const value = num(amount);
@@ -55,27 +68,66 @@ export function AddExpenseSheet({
 
   const submit = () => {
     if (value <= 0 || !categoryId) return;
-    addExpense({
+    const payload = {
       categoryId,
       amount: value,
       note: note.trim() || undefined,
       date,
-      recurrence: recurring ? "monthly" : "none",
-    });
-    toast(`${money(value)} · ${categoryLabel(category, lang)}`, { tone: "neon" });
+      recurrence: recurring ? ("monthly" as const) : ("none" as const),
+    };
+
+    if (editing) {
+      updateExpense(editing.id, payload);
+      toast(`${t("expenses.updated")} · ${money(value)}`, { tone: "neon" });
+    } else {
+      addExpense(payload);
+      toast(`${money(value)} · ${categoryLabel(category, lang)}`, { tone: "neon" });
+    }
     onClose();
+  };
+
+  /**
+   * Delete offers Undo rather than a confirm dialog. A blocking "are you sure?"
+   * on a ฿80 coffee is friction on the wrong side of the action — undo costs
+   * nothing when you meant it and rescues you when you didn't.
+   */
+  const remove = () => {
+    if (!editing) return;
+    const snapshot = editing;
+    removeExpense(snapshot.id);
+    onClose();
+    toast(`${t("expenses.deleted")} · ${money(snapshot.amount)}`, {
+      action: {
+        label: t("common.undo"),
+        onClick: () =>
+          addExpense({
+            categoryId: snapshot.categoryId,
+            amount: snapshot.amount,
+            note: snapshot.note,
+            date: snapshot.date,
+            recurrence: snapshot.recurrence,
+          }),
+      },
+      duration: 6000,
+    });
   };
 
   return (
     <Sheet
       open={open}
       onClose={onClose}
-      title={t("expenses.add")}
+      title={editing ? t("expenses.edit") : t("expenses.add")}
       footer={
         <div className="flex gap-3">
-          <Button variant="ghost" size="lg" className="flex-1" onClick={onClose}>
-            {t("common.cancel")}
-          </Button>
+          {editing ? (
+            <Button variant="danger" size="lg" onClick={remove} aria-label={t("common.delete")}>
+              <Trash2 size={17} />
+            </Button>
+          ) : (
+            <Button variant="ghost" size="lg" className="flex-1" onClick={onClose}>
+              {t("common.cancel")}
+            </Button>
+          )}
           <Button
             variant="neon"
             size="lg"
