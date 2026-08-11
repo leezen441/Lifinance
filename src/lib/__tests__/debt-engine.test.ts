@@ -17,7 +17,9 @@ import {
 import { buildSpendProfile, computeBudget } from "../budget-engine";
 import { DEFAULT_ANSWERS, estimateMonthly, estimateTotal } from "../assessment";
 import { buildMonthPlan } from "../month-plan";
+import { evalMoneyExpression } from "../money-expr";
 import { recommendBudget } from "../recommend";
+import { num } from "../utils";
 import type { Category, Debt, Expense, Goal, Settings } from "../types";
 import { toISODate, addDays } from "../date";
 
@@ -461,4 +463,15 @@ test("month plan: left to spend = in − out − save − debt", () => {
   );
   assert.ok(month.payOrder.length >= 1);
   assert.equal(month.payOrder[0].isFocus, true);
+});
+
+test("money expressions evaluate safely", () => {
+  assert.equal(evalMoneyExpression("120+80"), 200);
+  assert.equal(evalMoneyExpression("1000-250"), 750);
+  assert.equal(evalMoneyExpression("50*3"), 150);
+  assert.equal(evalMoneyExpression("100/4"), 25);
+  assert.equal(evalMoneyExpression("(10+5)*2"), 30);
+  assert.equal(evalMoneyExpression("120+"), null);
+  assert.equal(num("120+80"), 200);
+  assert.equal(num("99.5"), 99.5);
 });
