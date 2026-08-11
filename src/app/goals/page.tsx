@@ -68,33 +68,44 @@ export default function GoalsPage() {
         </Button>
       </div>
 
-      <Card neon className="text-center">
-        <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-          {t("worlds.saveThisMonth")}
+      <Card neon className="space-y-3">
+        <div>
+          <div className="text-[12px] font-semibold text-muted">
+            {t("worlds.saveHeroTitle")}
+          </div>
+          <div className="tabular mt-1 text-3xl font-bold tracking-tight text-neon text-glow sm:text-4xl">
+            {money(saveTarget)}
+          </div>
+          <p className="mt-2 text-[13px] leading-relaxed text-muted">
+            {t("worlds.saveHeroExplain")}
+          </p>
         </div>
-        <div className="tabular mt-1 text-4xl font-bold tracking-tight text-neon text-glow">
-          {money(saveTarget)}
-        </div>
-        <p className="mt-2 text-[12px] text-muted">{t("worlds.saveSub")}</p>
+
         {emergency ? (
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            {[Math.round(saveTarget) || 1000, 500, 1000, 2000]
-              .filter((v, i, a) => v > 0 && a.indexOf(v) === i)
-              .slice(0, 3)
-              .map((amount) => (
-                <button
-                  key={amount}
-                  type="button"
-                  onClick={() => quickSave(emergency.id, amount)}
-                  className="tabular rounded-xl border border-neon/40 bg-neon/10 px-3.5 py-2 text-[13px] font-semibold text-neon transition-colors hover:bg-neon/20"
-                >
-                  {t("worlds.saveIntoGoal")} +{money(amount)}
-                </button>
-              ))}
+          <div className="rounded-2xl border border-border bg-surface-2 p-3">
+            <p className="mb-2.5 text-[12px] text-muted">{t("worlds.saveHeroActionHint")}</p>
+            <div className="flex flex-wrap gap-2">
+              {[Math.round(saveTarget) || 1000, 500, 1000, 2000]
+                .filter((v, i, a) => v > 0 && a.indexOf(v) === i)
+                .slice(0, 3)
+                .map((amount) => (
+                  <button
+                    key={amount}
+                    type="button"
+                    onClick={() => quickSave(emergency.id, amount)}
+                    className="tabular rounded-xl border border-neon/40 bg-neon/10 px-3.5 py-2.5 text-[13px] font-semibold text-neon transition-colors hover:bg-neon/20"
+                  >
+                    {t("worlds.saveHeroAction")} · {money(amount)}
+                  </button>
+                ))}
+            </div>
+            <p className="mt-2 text-[11px] text-muted">
+              → {emergency.emoji} {emergency.name}
+            </p>
           </div>
         ) : (
-          <div className="mt-4 space-y-2">
-            <p className="text-[13px] text-muted">{t("worlds.emergencySuggest")}</p>
+          <div className="space-y-2 rounded-2xl border border-border bg-surface-2 p-3">
+            <p className="text-[13px] leading-relaxed text-muted">{t("worlds.emergencySuggest")}</p>
             <Button
               variant="outline"
               size="md"
