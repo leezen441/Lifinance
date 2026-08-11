@@ -137,6 +137,16 @@ export interface Settings {
   safetyBufferPct: number;
   /** Trailing window (days) used to learn the real spending rate. */
   spendWindowDays: 30 | 60 | 90;
+  /**
+   * On the Spend screen: subtract the "save this month" envelope when
+   * computing left-to-spend.
+   */
+  spendCountSave: boolean;
+  /**
+   * On the Spend screen: subtract the "pay debts this month" envelope when
+   * computing left-to-spend.
+   */
+  spendCountDebt: boolean;
   /** Cap on months simulated before we call a plan hopeless. */
   onboarded: boolean;
 }

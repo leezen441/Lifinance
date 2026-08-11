@@ -26,6 +26,8 @@ export default function MoneyPageClient() {
     incomes,
     categories,
     monthPlan,
+    settings,
+    updateSettings,
     removeExpense,
     removeIncome,
     addExpense,
@@ -49,6 +51,8 @@ export default function MoneyPageClient() {
   const today = todayISO();
   const monthStart = startOfMonthISO();
   const overspent = monthPlan.leftToSpend < 0;
+  const countSave = settings.spendCountSave !== false;
+  const countDebt = settings.spendCountDebt !== false;
 
   const activity = useMemo(() => {
     const rows: Activity[] = [
@@ -124,21 +128,42 @@ export default function MoneyPageClient() {
         <p className="mt-0.5 text-[13px] text-muted">{t("expenses.subtitle")}</p>
       </div>
 
-      <Card neon className="text-center">
-        <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-          {t("worlds.leftToSpend")}
+      <Card neon className="space-y-3 text-center">
+        <div>
+          <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+            {t("worlds.leftToSpend")}
+          </div>
+          <div
+            className={cn(
+              "tabular mt-1 text-4xl font-bold tracking-tight",
+              overspent ? "text-warn" : "text-neon text-glow",
+            )}
+          >
+            {money(monthPlan.leftToSpend)}
+          </div>
+          {overspent ? (
+            <p className="mt-2 text-[12px] text-warn">{t("worlds.leftToSpendWarn")}</p>
+          ) : null}
         </div>
-        <div
-          className={cn(
-            "tabular mt-1 text-4xl font-bold tracking-tight",
-            overspent ? "text-warn" : "text-neon text-glow",
-          )}
-        >
-          {money(monthPlan.leftToSpend)}
+
+        <div className="rounded-2xl border border-border bg-surface-2 p-3 text-left">
+          <div className="text-[13px] font-semibold">{t("worlds.countEnvelopesTitle")}</div>
+          <p className="mt-0.5 text-[11px] text-muted">{t("worlds.countEnvelopesHint")}</p>
+          <div className="mt-2.5 space-y-2">
+            <EnvelopeToggle
+              active={countSave}
+              label={t("worlds.reservedSave")}
+              amount={money(monthPlan.saveThisMonth)}
+              onClick={() => updateSettings({ spendCountSave: !countSave })}
+            />
+            <EnvelopeToggle
+              active={countDebt}
+              label={t("worlds.reservedDebt")}
+              amount={money(monthPlan.payDebtsThisMonth)}
+              onClick={() => updateSettings({ spendCountDebt: !countDebt })}
+            />
+          </div>
         </div>
-        {overspent ? (
-          <p className="mt-2 text-[12px] text-warn">{t("worlds.leftToSpendWarn")}</p>
-        ) : null}
       </Card>
 
       <div className="grid grid-cols-3 gap-2.5">
@@ -323,6 +348,49 @@ export default function MoneyPageClient() {
         editing={editingIncome}
       />
     </div>
+  );
+}
+
+function EnvelopeToggle({
+  active,
+  label,
+  amount,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  amount: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors",
+        active
+          ? "border-neon/40 bg-neon/10"
+          : "border-border bg-bg/40 opacity-70 hover:opacity-100",
+      )}
+    >
+      <span className="flex min-w-0 items-center gap-2.5">
+        <span
+          className={cn(
+            "grid h-5 w-5 shrink-0 place-items-center rounded border text-[11px] font-bold",
+            active ? "border-neon bg-neon text-neon-ink" : "border-border text-transparent",
+          )}
+        >
+          {active ? "✓" : "·"}
+        </span>
+        <span className={cn("text-[13px] font-medium", active ? "text-ink" : "text-muted")}>
+          {label}
+        </span>
+      </span>
+      <span className={cn("tabular shrink-0 text-[13px] font-semibold", active ? "text-neon" : "text-muted")}>
+        {amount}
+      </span>
+    </button>
   );
 }
 

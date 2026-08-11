@@ -69,6 +69,8 @@ export const DEFAULT_SETTINGS: Settings = {
   lifestyleKeepRatio: 0.7,
   safetyBufferPct: 5,
   spendWindowDays: 60,
+  spendCountSave: true,
+  spendCountDebt: true,
   onboarded: false,
 };
 

@@ -198,6 +198,8 @@ const settings: Settings = {
   lifestyleKeepRatio: 0.7,
   safetyBufferPct: 5,
   spendWindowDays: 30,
+  spendCountSave: true,
+  spendCountDebt: true,
   onboarded: true,
 };
 
@@ -463,6 +465,51 @@ test("month plan: left to spend = in − out − save − debt", () => {
   );
   assert.ok(month.payOrder.length >= 1);
   assert.equal(month.payOrder[0].isFocus, true);
+});
+
+test("month plan can ignore save or debt envelopes", () => {
+  const debts = [debt({ id: "a", balance: 10_000, apr: 20, minPayment: 1_000 })];
+  const expenses: Expense[] = [
+    expense({ id: "coffee", categoryId: "c_coffee", amount: 500, date: toISODate(NOW) }),
+  ];
+  const incomes = [
+    {
+      id: "pay",
+      amount: 40_000,
+      date: toISODate(NOW),
+      kind: "salary" as const,
+      createdAt: toISODate(NOW),
+    },
+  ];
+  const profile = buildSpendProfile(expenses, categories, 30, NOW);
+  const budget = computeBudget(settings, profile, debts, []);
+  const rec = recommendBudget(settings.monthlyIncome, profile, debts, [], () => false);
+  const { plan } = buildPlan(debts, budget.availableExtra, "avalanche");
+
+  const both = buildMonthPlan({
+    settings,
+    incomes,
+    expenses,
+    debts,
+    goals: [],
+    budget,
+    recommendation: rec,
+    plan,
+    now: NOW,
+  });
+  const cashOnly = buildMonthPlan({
+    settings: { ...settings, spendCountSave: false, spendCountDebt: false },
+    incomes,
+    expenses,
+    debts,
+    goals: [],
+    budget,
+    recommendation: rec,
+    plan,
+    now: NOW,
+  });
+  assert.equal(cashOnly.leftToSpend, 40_000 - 500);
+  assert.ok(cashOnly.leftToSpend > both.leftToSpend);
 });
 
 test("money expressions evaluate safely", () => {

@@ -48,9 +48,14 @@ export interface MonthPlan {
   debtMinimums: number;
   /** Extra on top of mins for the focus debt. */
   debtExtra: number;
-  /** moneyIn − moneyOut − save − debt payments. */
+  /** moneyIn − moneyOut − (selected envelopes). */
   leftToSpend: number;
+  /** Save + debt amounts currently counted toward left-to-spend. */
   reserved: number;
+  /** Whether the save envelope is counted. */
+  countSave: boolean;
+  /** Whether the debt envelope is counted. */
+  countDebt: boolean;
   payOrder: PayOrderItem[];
   focusDebtId: string | null;
   focusName: string | null;
@@ -99,7 +104,10 @@ export function buildMonthPlan(input: {
   const debtExtra = input.budget.availableExtra;
   const payDebtsThisMonth = debtMinimums + debtExtra;
 
-  const reserved = saveThisMonth + payDebtsThisMonth;
+  const countSave = input.settings.spendCountSave !== false;
+  const countDebt = input.settings.spendCountDebt !== false;
+  const reserved =
+    (countSave ? saveThisMonth : 0) + (countDebt ? payDebtsThisMonth : 0);
   const leftToSpend = moneyIn - moneyOut - reserved;
 
   const activeDebts = input.debts.filter((d) => !d.archivedAt && d.balance > 0);
@@ -151,6 +159,8 @@ export function buildMonthPlan(input: {
     debtExtra,
     leftToSpend,
     reserved,
+    countSave,
+    countDebt,
     payOrder,
     focusDebtId: focus?.debtId ?? null,
     focusName: focus?.name ?? null,
