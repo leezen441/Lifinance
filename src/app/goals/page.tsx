@@ -24,15 +24,13 @@ const MILESTONE_KEYS = {
 } as const;
 
 export default function GoalsPage() {
-  const { goals, removeGoal, contributeToGoal, monthPlan, addGoal } = useFinance();
+  const { goals, removeGoal, contributeToGoal, monthPlan } = useFinance();
   const { t, money, percent, monthYear } = useI18n();
   const { toast } = useToast();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
 
-  const emergency = goals.find((g) => g.isEmergencyFund);
   const savedTotal = monthPlan.savedTotal;
-  const saveTarget = monthPlan.saveThisMonth;
 
   const quickSave = (goalId: string, amount: number) => {
     const g = goals.find((x) => x.id === goalId);
@@ -69,71 +67,13 @@ export default function GoalsPage() {
         </Button>
       </div>
 
-      <Card neon className="space-y-3">
-        <div>
-          <div className="text-[12px] font-semibold text-muted">
-            {t("worlds.saveHeroTitle")}
-          </div>
-          <div className="tabular mt-1 text-3xl font-bold tracking-tight text-neon text-glow sm:text-4xl">
-            {money(savedTotal)}
-          </div>
-          <p className="mt-2 text-[13px] leading-relaxed text-muted">
-            {goals.length > 0 ? t("worlds.saveHeroExplain") : t("worlds.saveHeroEmpty")}
-          </p>
-          {saveTarget > 0 ? (
-            <p className="mt-1 text-[12px] text-muted">
-              {t("worlds.saveHeroPlan", { amount: money(saveTarget) })}
-            </p>
-          ) : null}
+      <Card neon>
+        <div className="tabular text-3xl font-bold tracking-tight text-neon text-glow sm:text-4xl">
+          {money(savedTotal)}
         </div>
-
-        {emergency ? (
-          saveTarget > 0 ? (
-          <div className="rounded-2xl border border-border bg-surface-2 p-3">
-            <p className="mb-2.5 text-[12px] text-muted">{t("worlds.saveHeroActionHint")}</p>
-            <div className="flex flex-wrap gap-2">
-              {[Math.round(saveTarget) || 1000, 500, 1000, 2000]
-                .filter((v, i, a) => v > 0 && a.indexOf(v) === i)
-                .slice(0, 3)
-                .map((amount) => (
-                  <button
-                    key={amount}
-                    type="button"
-                    onClick={() => quickSave(emergency.id, amount)}
-                    className="tabular rounded-xl border border-neon/40 bg-neon/10 px-3.5 py-2.5 text-[13px] font-semibold text-neon transition-colors hover:bg-neon/20"
-                  >
-                    {t("worlds.saveHeroAction")} · {money(amount)}
-                  </button>
-                ))}
-            </div>
-            <p className="mt-2 text-[11px] text-muted">
-              → {emergency.emoji} {emergency.name}
-            </p>
-          </div>
-          ) : null
-        ) : (
-          <div className="space-y-2 rounded-2xl border border-border bg-surface-2 p-3">
-            <p className="text-[13px] leading-relaxed text-muted">{t("worlds.emergencySuggest")}</p>
-            <Button
-              variant="outline"
-              size="md"
-              onClick={() => {
-                addGoal({
-                  name: t("goals.emergency"),
-                  emoji: "🛟",
-                  target: Math.max(10_000, Math.round(saveTarget * 6) || 30_000),
-                  saved: 0,
-                  monthlyContribution: Math.round(saveTarget) || 1000,
-                  isEmergencyFund: true,
-                });
-                toast(t("worlds.createEmergency"), { tone: "neon" });
-              }}
-            >
-              <ShieldCheck size={16} />
-              {t("worlds.createEmergency")}
-            </Button>
-          </div>
-        )}
+        <p className="mt-2 text-[13px] leading-relaxed text-muted">
+          {goals.length > 0 ? t("worlds.saveHeroExplain") : t("worlds.saveHeroEmpty")}
+        </p>
       </Card>
 
       {goals.length === 0 ? (

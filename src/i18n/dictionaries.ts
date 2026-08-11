@@ -399,7 +399,7 @@ export const en = {
     housingOwned: "Own it outright",
     housingCost: "Rent / repayment per month",
     housingCostFamily: "What you chip in each month",
-    housingCostRequired: "Enter what you actually pay each month so the plan is real.",
+    housingCostRequired: "Type a number (0 is fine if you pay nothing).",
 
     billsTitle: "Fixed monthly bills",
     billsSub: "The ones that arrive whether you like it or not.",
@@ -473,7 +473,7 @@ export const en = {
     reviewTitle: "Here's your month",
     reviewSub: "Estimated from your answers. Adjust anything that looks off.",
     estimatedTotal: "Estimated monthly spending",
-    incomeRequired: "Add your monthly take-home — without it the plan cannot run.",
+    incomeRequired: "Type your monthly take-home (0 is fine if you have none right now).",
     apply: "Use this as my starting point",
     applied: "Saved — your plan is live",
 
@@ -918,7 +918,7 @@ export const th = {
     housingOwned: "เป็นเจ้าของแล้ว",
     housingCost: "ค่าเช่า / ค่าผ่อนต่อเดือน",
     housingCostFamily: "เงินที่ช่วยที่บ้านต่อเดือน",
-    housingCostRequired: "ใส่ยอดที่จ่ายจริงต่อเดือน เพื่อให้แผนตรงกับชีวิตคุณ",
+    housingCostRequired: "ใส่ตัวเลขได้ รวมถึง 0 ถ้าไม่ได้จ่าย",
 
     billsTitle: "ค่าใช้จ่ายประจำเดือน",
     billsSub: "พวกที่ยังไงก็ต้องจ่าย",
@@ -992,7 +992,7 @@ export const th = {
     reviewTitle: "นี่คือเดือนของคุณ",
     reviewSub: "ประเมินจากคำตอบ ปรับตรงไหนที่ดูไม่ตรงได้เลย",
     estimatedTotal: "ค่าใช้จ่ายต่อเดือนโดยประมาณ",
-    incomeRequired: "ใส่รายได้ต่อเดือนก่อน — ไม่มีตัวเลขนี้แผนจะคำนวณไม่ได้",
+    incomeRequired: "ใส่รายได้ต่อเดือนได้ รวมถึง 0 ถ้าตอนนี้ยังไม่มี",
     apply: "ใช้ตัวเลขนี้เป็นจุดเริ่มต้น",
     applied: "บันทึกแล้ว — แผนของคุณพร้อมใช้",
 

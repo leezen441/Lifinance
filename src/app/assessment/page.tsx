@@ -50,6 +50,14 @@ export default function AssessmentPage() {
   const [income, setIncome] = useState(
     settings.monthlyIncome > 0 ? String(settings.monthlyIncome) : "",
   );
+  /** Empty until the user types — so 0 is a real answer, not “not filled”. */
+  const [housingCostText, setHousingCostText] = useState(() => {
+    const prior = baseline?.answers as Partial<QuizAnswers> | undefined;
+    if (prior && typeof prior.housingCost === "number" && prior.housing !== "owned") {
+      return String(prior.housingCost);
+    }
+    return "";
+  });
 
   const set = <K extends keyof QuizAnswers>(key: K, value: QuizAnswers[K]) =>
     setAnswers((a) => ({ ...a, [key]: value }));
@@ -63,7 +71,7 @@ export default function AssessmentPage() {
   const setOverride = (categoryId: string, amount: number) =>
     setAnswers((a) => {
       const amountOverrides = { ...a.amountOverrides };
-      // Keep 0 so the row stays editable while the user clears/retypes.
+      // Keep 0 so “I spend nothing here” is valid and the field still shows 0.
       if (!Number.isFinite(amount) || amount < 0) delete amountOverrides[categoryId];
       else amountOverrides[categoryId] = amount;
       return { ...a, amountOverrides };
@@ -72,7 +80,7 @@ export default function AssessmentPage() {
   const setSubAmount = (subId: string, amount: number) =>
     setAnswers((a) => {
       const subscriptionAmounts = { ...a.subscriptionAmounts };
-      if (amount <= 0) delete subscriptionAmounts[subId];
+      if (!Number.isFinite(amount) || amount < 0) delete subscriptionAmounts[subId];
       else subscriptionAmounts[subId] = amount;
       return { ...a, subscriptionAmounts };
     });
@@ -130,12 +138,12 @@ export default function AssessmentPage() {
   const isLast = step === QUIZ_STEPS.length - 1;
 
   const housingBlocked =
-    current === "housing" && answers.housing !== "owned" && answers.housingCost <= 0;
-  const incomeBlocked = isLast && num(income) <= 0;
+    current === "housing" && answers.housing !== "owned" && housingCostText.trim() === "";
+  const incomeBlocked = isLast && income.trim() === "";
   const nextBlocked = housingBlocked || incomeBlocked;
 
   const finish = () => {
-    if (num(income) <= 0) return;
+    if (income.trim() === "") return;
     setBaseline({
       createdAt: new Date().toISOString(),
       monthlyByCategory: estimate,
@@ -185,8 +193,12 @@ export default function AssessmentPage() {
                   id="housingCost"
                   symbol={symbol}
                   placeholder="0"
-                  value={answers.housingCost || ""}
-                  onChange={(e) => set("housingCost", num(e.target.value))}
+                  value={housingCostText}
+                  onChange={(e) => {
+                    const text = e.target.value;
+                    setHousingCostText(text);
+                    set("housingCost", num(text));
+                  }}
                 />
                 {housingBlocked ? (
                   <p className="mt-2 text-[12px] text-warn">{t("assess.housingCostRequired")}</p>
@@ -324,7 +336,7 @@ export default function AssessmentPage() {
                         <MoneyInput
                           id={`sub-${sub.id}`}
                           symbol={symbol}
-                          value={amount || ""}
+                          value={String(amount)}
                           onChange={(e) => setSubAmount(sub.id, num(e.target.value))}
                         />
                       </div>
@@ -430,7 +442,7 @@ export default function AssessmentPage() {
                     </div>
                     <MoneyInput
                       symbol={symbol}
-                      value={amount || ""}
+                      value={String(amount)}
                       onChange={(e) => setOverride(categoryId, num(e.target.value))}
                       aria-label={categoryLabel(category, lang)}
                     />
@@ -563,7 +575,7 @@ function AmountAdjuster({
               <MoneyInput
                 id={`adj-${categoryId}`}
                 symbol={symbol}
-                value={amount || ""}
+                value={String(amount)}
                 onChange={(e) => onChange(categoryId, num(e.target.value))}
               />
             </div>
@@ -742,7 +754,7 @@ function AmountField({
         id={id}
         symbol={symbol}
         placeholder="0"
-        value={value || ""}
+        value={String(value)}
         onChange={(e) => onChange(num(e.target.value))}
       />
     </div>
