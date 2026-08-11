@@ -156,7 +156,11 @@ export interface Settings {
    * computing left-to-spend.
    */
   spendCountDebt: boolean;
-  /** Cap on months simulated before we call a plan hopeless. */
+  /**
+   * When true and spend pot > 0: left-to-spend = spend pot − money out.
+   * Expenses eat the spend pot only (save/debt pots are reminders, not deducted).
+   */
+  spendAgainstPotOnly: boolean;
   onboarded: boolean;
 }
 

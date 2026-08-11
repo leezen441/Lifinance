@@ -31,6 +31,7 @@ export default function GoalsPage() {
   const [editing, setEditing] = useState<Goal | null>(null);
 
   const emergency = goals.find((g) => g.isEmergencyFund);
+  const savedTotal = monthPlan.savedTotal;
   const saveTarget = monthPlan.saveThisMonth;
 
   const quickSave = (goalId: string, amount: number) => {
@@ -74,11 +75,16 @@ export default function GoalsPage() {
             {t("worlds.saveHeroTitle")}
           </div>
           <div className="tabular mt-1 text-3xl font-bold tracking-tight text-neon text-glow sm:text-4xl">
-            {money(saveTarget)}
+            {money(savedTotal)}
           </div>
           <p className="mt-2 text-[13px] leading-relaxed text-muted">
-            {saveTarget > 0 ? t("worlds.saveHeroExplain") : t("worlds.saveHeroEmpty")}
+            {goals.length > 0 ? t("worlds.saveHeroExplain") : t("worlds.saveHeroEmpty")}
           </p>
+          {saveTarget > 0 ? (
+            <p className="mt-1 text-[12px] text-muted">
+              {t("worlds.saveHeroPlan", { amount: money(saveTarget) })}
+            </p>
+          ) : null}
         </div>
 
         {emergency ? (

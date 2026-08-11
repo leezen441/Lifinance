@@ -49,9 +49,14 @@ export interface MonthPlan {
    */
   spendSuggested: number;
   /**
-   * Sum of monthly contributions on Save-page goals — the real save envelope.
+   * Sum of monthly contributions on Save-page goals — the real save envelope
+   * for this month's plan (what to set aside).
    */
   saveThisMonth: number;
+  /**
+   * Sum of money already in goals (`saved`) — the savings balance.
+   */
+  savedTotal: number;
   /** Engine suggestion only (for tips) — not what the Spend toggles use. */
   saveSuggested: number;
   /** How much to send to debts this month (mins + spare). */
@@ -60,10 +65,12 @@ export interface MonthPlan {
   debtMinimums: number;
   /** Extra on top of mins for the focus debt. */
   debtExtra: number;
-  /** moneyIn − moneyOut − (selected envelopes). */
+  /** moneyIn − moneyOut − envelopes, or spendPot − moneyOut when against-pot-only. */
   leftToSpend: number;
   /** Amounts currently counted toward left-to-spend. */
   reserved: number;
+  /** True when remaining = spend pot − expenses. */
+  againstPotOnly: boolean;
   countSpend: boolean;
   countSave: boolean;
   countDebt: boolean;
@@ -82,6 +89,11 @@ function inCurrentMonth(date: string, monthStart: string, today: string): boolea
 /** Monthly save envelope = what the user set on goals, nothing else. */
 export function saveFromGoals(goals: Goal[]): number {
   return goals.reduce((s, g) => s + Math.max(0, g.monthlyContribution), 0);
+}
+
+/** Total already saved across all goals. */
+export function savedFromGoals(goals: Goal[]): number {
+  return goals.reduce((s, g) => s + Math.max(0, g.saved), 0);
 }
 
 export function buildMonthPlan(input: {
@@ -112,6 +124,7 @@ export function buildMonthPlan(input: {
 
   const spendPot = Math.max(0, input.settings.spendPotAmount ?? 0);
   const saveThisMonth = saveFromGoals(input.goals);
+  const savedTotal = savedFromGoals(input.goals);
   const saveSuggested = Math.max(0, input.recommendation.savings);
 
   const debtMinimums = input.budget.minimumPayments;
@@ -121,14 +134,17 @@ export function buildMonthPlan(input: {
   // After locking save + debt, this is what is left for day-to-day spending.
   const spendSuggested = Math.max(0, Math.round(moneyIn - saveThisMonth - payDebtsThisMonth));
 
-  const countSpend = input.settings.spendCountSpend !== false && spendPot > 0;
-  const countSave = input.settings.spendCountSave !== false;
-  const countDebt = input.settings.spendCountDebt !== false;
-  const reserved =
-    (countSpend ? spendPot : 0) +
-    (countSave ? saveThisMonth : 0) +
-    (countDebt ? payDebtsThisMonth : 0);
-  const leftToSpend = moneyIn - moneyOut - reserved;
+  const againstPotOnly = Boolean(input.settings.spendAgainstPotOnly) && spendPot > 0;
+  const countSpend = !againstPotOnly && input.settings.spendCountSpend !== false && spendPot > 0;
+  const countSave = !againstPotOnly && input.settings.spendCountSave !== false;
+  const countDebt = !againstPotOnly && input.settings.spendCountDebt !== false;
+  const reserved = againstPotOnly
+    ? spendPot
+    : (countSpend ? spendPot : 0) +
+      (countSave ? saveThisMonth : 0) +
+      (countDebt ? payDebtsThisMonth : 0);
+  // Pot-only: expenses eat the spend pot. Otherwise: income minus out minus selected pots.
+  const leftToSpend = againstPotOnly ? spendPot - moneyOut : moneyIn - moneyOut - reserved;
 
   const activeDebts = input.debts.filter((d) => !d.archivedAt && d.balance > 0);
   const orderedDetails = [...input.plan.perDebt].sort((a, b) => {
@@ -175,12 +191,14 @@ export function buildMonthPlan(input: {
     spendPot,
     spendSuggested,
     saveThisMonth,
+    savedTotal,
     saveSuggested,
     payDebtsThisMonth,
     debtMinimums,
     debtExtra,
     leftToSpend,
     reserved,
+    againstPotOnly,
     countSpend,
     countSave,
     countDebt,

@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
  * The only dashboard headline that matters: three envelopes for this month.
  */
 export function ThisMonthCard() {
-  const { monthPlan } = useFinance();
+  const { monthPlan, goals } = useFinance();
   const { t, money, monthYear } = useI18n();
   const overspent = monthPlan.leftToSpend < 0;
 
@@ -27,7 +27,13 @@ export function ThisMonthCard() {
           href="/money"
           icon={<Wallet size={18} />}
           label={t("worlds.spend")}
-          hint={overspent ? t("worlds.leftToSpendWarn") : t("worlds.spendSub")}
+          hint={
+            overspent
+              ? t("worlds.leftToSpendWarn")
+              : monthPlan.againstPotOnly
+                ? t("worlds.leftInSpendPot")
+                : t("worlds.spendSub")
+          }
           value={money(monthPlan.leftToSpend)}
           warn={overspent}
         />
@@ -35,8 +41,15 @@ export function ThisMonthCard() {
           href="/goals"
           icon={<PiggyBank size={18} />}
           label={t("worlds.save")}
-          hint={t("worlds.saveSub")}
-          value={money(monthPlan.saveThisMonth)}
+          hint={
+            monthPlan.savedTotal > 0
+              ? t("worlds.saveSub")
+              : goals.length > 0
+                ? t("worlds.saveSubZero")
+                : t("worlds.saveEmpty")
+          }
+          value={money(monthPlan.savedTotal)}
+          muted={monthPlan.savedTotal <= 0}
         />
         <Envelope
           href="/debts"
@@ -80,6 +93,7 @@ function Envelope({
   value,
   meta,
   warn,
+  muted,
 }: {
   href: string;
   icon: React.ReactNode;
@@ -88,6 +102,7 @@ function Envelope({
   value: string;
   meta?: string;
   warn?: boolean;
+  muted?: boolean;
 }) {
   return (
     <Link
@@ -101,7 +116,12 @@ function Envelope({
         {icon}
         {label}
       </div>
-      <div className={cn("tabular text-xl font-bold tracking-tight", warn ? "text-warn" : "text-neon")}>
+      <div
+        className={cn(
+          "tabular text-xl font-bold tracking-tight",
+          warn ? "text-warn" : muted ? "text-muted" : "text-neon",
+        )}
+      >
         {value}
       </div>
       <p className="mt-1 text-[11px] leading-snug text-muted">{hint}</p>

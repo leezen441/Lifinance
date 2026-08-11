@@ -73,6 +73,7 @@ export const DEFAULT_SETTINGS: Settings = {
   spendCountSpend: true,
   spendCountSave: true,
   spendCountDebt: true,
+  spendAgainstPotOnly: false,
   onboarded: false,
 };
 

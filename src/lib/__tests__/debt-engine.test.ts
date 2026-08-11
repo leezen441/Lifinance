@@ -202,6 +202,7 @@ const settings: Settings = {
   spendCountSpend: true,
   spendCountSave: true,
   spendCountDebt: true,
+  spendAgainstPotOnly: false,
   onboarded: true,
 };
 
@@ -513,6 +514,7 @@ test("month plan can ignore save or debt envelopes", () => {
   });
   assert.equal(both.saveThisMonth, 2_000, "save pot comes from goals only");
   assert.equal(both.spendPot, 10_000);
+  assert.equal(both.savedTotal, 0, "saved total is money already in goals");
 
   const cashOnly = buildMonthPlan({
     settings: {
@@ -533,6 +535,59 @@ test("month plan can ignore save or debt envelopes", () => {
   });
   assert.equal(cashOnly.leftToSpend, 40_000 - 500);
   assert.ok(cashOnly.leftToSpend > both.leftToSpend);
+});
+
+test("month plan can track expenses against spend pot only", () => {
+  const debts = [debt({ id: "a", balance: 10_000, apr: 20, minPayment: 1_000 })];
+  const expenses: Expense[] = [
+    expense({ id: "coffee", categoryId: "c_coffee", amount: 500, date: toISODate(NOW) }),
+  ];
+  const incomes = [
+    {
+      id: "pay",
+      amount: 40_000,
+      date: toISODate(NOW),
+      kind: "salary" as const,
+      createdAt: toISODate(NOW),
+    },
+  ];
+  const goals = [
+    {
+      id: "g",
+      name: "EF",
+      emoji: "🛟",
+      target: 50_000,
+      saved: 0,
+      monthlyContribution: 2_000,
+      isEmergencyFund: true,
+      createdAt: "2026-01-01",
+    },
+  ];
+  const profile = buildSpendProfile(expenses, categories, 30, NOW);
+  const budget = computeBudget(settings, profile, debts, goals);
+  const rec = recommendBudget(settings.monthlyIncome, profile, debts, goals, () => false);
+  const { plan } = buildPlan(debts, budget.availableExtra, "avalanche");
+
+  const potOnly = buildMonthPlan({
+    settings: {
+      ...settings,
+      spendPotAmount: 10_000,
+      spendAgainstPotOnly: true,
+      spendCountSave: true,
+      spendCountDebt: true,
+    },
+    incomes,
+    expenses,
+    debts,
+    goals,
+    budget,
+    recommendation: rec,
+    plan,
+    now: NOW,
+  });
+  assert.equal(potOnly.againstPotOnly, true);
+  assert.equal(potOnly.leftToSpend, 10_000 - 500);
+  assert.equal(potOnly.reserved, 10_000);
 });
 
 test("money expressions evaluate safely", () => {

@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { ArrowDownLeft, ArrowUpRight, Pencil, Repeat, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Label, MoneyInput } from "@/components/ui/Field";
+import { Label, MoneyInput, Toggle } from "@/components/ui/Field";
 import { Sheet } from "@/components/ui/Sheet";
 import { AddExpenseSheet } from "@/components/expenses/AddExpenseSheet";
 import { AddIncomeSheet } from "@/components/money/AddIncomeSheet";
@@ -56,6 +56,7 @@ export default function MoneyPageClient() {
   const today = todayISO();
   const monthStart = startOfMonthISO();
   const overspent = monthPlan.leftToSpend < 0;
+  const againstPotOnly = Boolean(settings.spendAgainstPotOnly);
   const countSpend = settings.spendCountSpend !== false;
   const countSave = settings.spendCountSave !== false;
   const countDebt = settings.spendCountDebt !== false;
@@ -137,7 +138,7 @@ export default function MoneyPageClient() {
       <Card neon className="space-y-3 text-center">
         <div>
           <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-            {t("worlds.leftToSpend")}
+            {monthPlan.againstPotOnly ? t("worlds.leftInSpendPot") : t("worlds.leftToSpend")}
           </div>
           <div
             className={cn(
@@ -153,12 +154,36 @@ export default function MoneyPageClient() {
         </div>
 
         <div className="rounded-2xl border border-border bg-surface-2 p-3 text-left">
-          <div className="text-[13px] font-semibold">{t("worlds.countEnvelopesTitle")}</div>
-          <p className="mt-0.5 text-[11px] text-muted">{t("worlds.countEnvelopesHint")}</p>
+          <Toggle
+            checked={againstPotOnly}
+            onChange={(next) => {
+              if (next && monthPlan.spendPot <= 0) {
+                setSpendPotOpen(true);
+                return;
+              }
+              updateSettings({ spendAgainstPotOnly: next });
+            }}
+            label={t("worlds.againstPotOnly")}
+            hint={
+              againstPotOnly && monthPlan.spendPot <= 0
+                ? t("worlds.againstPotOnlyNeedPot")
+                : t("worlds.againstPotOnlyHint")
+            }
+          />
+
+          {!againstPotOnly ? (
+            <>
+              <div className="mt-3 text-[13px] font-semibold">{t("worlds.countEnvelopesTitle")}</div>
+              <p className="mt-0.5 text-[11px] text-muted">{t("worlds.countEnvelopesHint")}</p>
+            </>
+          ) : (
+            <p className="mt-3 text-[11px] text-muted">{t("worlds.againstPotOnlyHint")}</p>
+          )}
+
           <div className="mt-2.5 space-y-2">
             <div className="flex items-stretch gap-1.5">
               <EnvelopeToggle
-                active={countSpend && monthPlan.spendPot > 0}
+                active={againstPotOnly ? monthPlan.spendPot > 0 : countSpend && monthPlan.spendPot > 0}
                 label={t("worlds.reservedSpend")}
                 amount={
                   monthPlan.spendPot > 0
@@ -172,7 +197,13 @@ export default function MoneyPageClient() {
                       })
                     : t("worlds.reservedSpendHint")
                 }
-                onClick={() => updateSettings({ spendCountSpend: !countSpend })}
+                onClick={() => {
+                  if (againstPotOnly) {
+                    setSpendPotOpen(true);
+                    return;
+                  }
+                  updateSettings({ spendCountSpend: !countSpend });
+                }}
                 inactive={monthPlan.spendPot <= 0}
               />
               <button
@@ -185,31 +216,35 @@ export default function MoneyPageClient() {
               </button>
             </div>
 
-            <EnvelopeToggle
-              active={countSave}
-              label={t("worlds.reservedSave")}
-              hint={monthPlan.saveThisMonth > 0 ? t("worlds.reservedSaveFromGoals") : undefined}
-              amount={
-                monthPlan.saveThisMonth > 0 ? (
-                  money(monthPlan.saveThisMonth)
-                ) : (
-                  <Link
-                    href="/goals"
-                    className="text-[12px] font-medium text-neon underline-offset-2 hover:underline"
-                  >
-                    {t("worlds.reservedSaveEmpty")}
-                  </Link>
-                )
-              }
-              onClick={() => updateSettings({ spendCountSave: !countSave })}
-            />
+            {!againstPotOnly ? (
+              <>
+                <EnvelopeToggle
+                  active={countSave}
+                  label={t("worlds.reservedSave")}
+                  hint={monthPlan.saveThisMonth > 0 ? t("worlds.reservedSaveFromGoals") : undefined}
+                  amount={
+                    monthPlan.saveThisMonth > 0 ? (
+                      money(monthPlan.saveThisMonth)
+                    ) : (
+                      <Link
+                        href="/goals"
+                        className="text-[12px] font-medium text-neon underline-offset-2 hover:underline"
+                      >
+                        {t("worlds.reservedSaveEmpty")}
+                      </Link>
+                    )
+                  }
+                  onClick={() => updateSettings({ spendCountSave: !countSave })}
+                />
 
-            <EnvelopeToggle
-              active={countDebt}
-              label={t("worlds.reservedDebt")}
-              amount={money(monthPlan.payDebtsThisMonth)}
-              onClick={() => updateSettings({ spendCountDebt: !countDebt })}
-            />
+                <EnvelopeToggle
+                  active={countDebt}
+                  label={t("worlds.reservedDebt")}
+                  amount={money(monthPlan.payDebtsThisMonth)}
+                  onClick={() => updateSettings({ spendCountDebt: !countDebt })}
+                />
+              </>
+            ) : null}
           </div>
         </div>
       </Card>
