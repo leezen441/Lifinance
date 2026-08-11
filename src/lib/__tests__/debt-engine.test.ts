@@ -198,6 +198,8 @@ const settings: Settings = {
   lifestyleKeepRatio: 0.7,
   safetyBufferPct: 5,
   spendWindowDays: 30,
+  spendPotAmount: 0,
+  spendCountSpend: true,
   spendCountSave: true,
   spendCountDebt: true,
   onboarded: true,
@@ -481,28 +483,49 @@ test("month plan can ignore save or debt envelopes", () => {
       createdAt: toISODate(NOW),
     },
   ];
+  const goals = [
+    {
+      id: "g",
+      name: "EF",
+      emoji: "🛟",
+      target: 50_000,
+      saved: 0,
+      monthlyContribution: 2_000,
+      isEmergencyFund: true,
+      createdAt: "2026-01-01",
+    },
+  ];
   const profile = buildSpendProfile(expenses, categories, 30, NOW);
-  const budget = computeBudget(settings, profile, debts, []);
-  const rec = recommendBudget(settings.monthlyIncome, profile, debts, [], () => false);
+  const budget = computeBudget(settings, profile, debts, goals);
+  const rec = recommendBudget(settings.monthlyIncome, profile, debts, goals, () => false);
   const { plan } = buildPlan(debts, budget.availableExtra, "avalanche");
 
   const both = buildMonthPlan({
-    settings,
+    settings: { ...settings, spendPotAmount: 10_000 },
     incomes,
     expenses,
     debts,
-    goals: [],
+    goals,
     budget,
     recommendation: rec,
     plan,
     now: NOW,
   });
+  assert.equal(both.saveThisMonth, 2_000, "save pot comes from goals only");
+  assert.equal(both.spendPot, 10_000);
+
   const cashOnly = buildMonthPlan({
-    settings: { ...settings, spendCountSave: false, spendCountDebt: false },
+    settings: {
+      ...settings,
+      spendPotAmount: 10_000,
+      spendCountSpend: false,
+      spendCountSave: false,
+      spendCountDebt: false,
+    },
     incomes,
     expenses,
     debts,
-    goals: [],
+    goals,
     budget,
     recommendation: rec,
     plan,

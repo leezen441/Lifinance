@@ -1,18 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowDownLeft, ArrowUpRight, Repeat, Trash2 } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Pencil, Repeat, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Label, MoneyInput } from "@/components/ui/Field";
+import { Sheet } from "@/components/ui/Sheet";
 import { AddExpenseSheet } from "@/components/expenses/AddExpenseSheet";
 import { AddIncomeSheet } from "@/components/money/AddIncomeSheet";
 import { useFinance } from "@/store/FinanceProvider";
 import { useI18n } from "@/i18n/I18nProvider";
 import { categoryLabel } from "@/lib/category";
 import { startOfMonthISO, todayISO } from "@/lib/date";
+import { CURRENCY_SYMBOL } from "@/lib/format";
 import { useToast } from "@/components/ui/Toast";
-import { cn } from "@/lib/utils";
+import { cn, num } from "@/lib/utils";
 import type { Expense, IncomeEntry } from "@/lib/types";
 
 type Activity =
@@ -39,6 +43,7 @@ export default function MoneyPageClient() {
 
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [incomeOpen, setIncomeOpen] = useState(false);
+  const [spendPotOpen, setSpendPotOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [editingIncome, setEditingIncome] = useState<IncomeEntry | null>(null);
 
@@ -51,6 +56,7 @@ export default function MoneyPageClient() {
   const today = todayISO();
   const monthStart = startOfMonthISO();
   const overspent = monthPlan.leftToSpend < 0;
+  const countSpend = settings.spendCountSpend !== false;
   const countSave = settings.spendCountSave !== false;
   const countDebt = settings.spendCountDebt !== false;
 
@@ -150,12 +156,54 @@ export default function MoneyPageClient() {
           <div className="text-[13px] font-semibold">{t("worlds.countEnvelopesTitle")}</div>
           <p className="mt-0.5 text-[11px] text-muted">{t("worlds.countEnvelopesHint")}</p>
           <div className="mt-2.5 space-y-2">
+            <div className="flex items-stretch gap-1.5">
+              <EnvelopeToggle
+                active={countSpend && monthPlan.spendPot > 0}
+                label={t("worlds.reservedSpend")}
+                amount={
+                  monthPlan.spendPot > 0
+                    ? money(monthPlan.spendPot)
+                    : t("worlds.reservedSpendEmpty")
+                }
+                hint={
+                  monthPlan.spendSuggested > 0
+                    ? t("worlds.reservedSpendSuggested", {
+                        amount: money(monthPlan.spendSuggested),
+                      })
+                    : t("worlds.reservedSpendHint")
+                }
+                onClick={() => updateSettings({ spendCountSpend: !countSpend })}
+                inactive={monthPlan.spendPot <= 0}
+              />
+              <button
+                type="button"
+                onClick={() => setSpendPotOpen(true)}
+                className="grid w-11 shrink-0 place-items-center rounded-xl border border-border bg-bg/40 text-muted transition-colors hover:border-neon/40 hover:text-neon"
+                aria-label={t("worlds.reservedSpendEdit")}
+              >
+                <Pencil size={15} />
+              </button>
+            </div>
+
             <EnvelopeToggle
               active={countSave}
               label={t("worlds.reservedSave")}
-              amount={money(monthPlan.saveThisMonth)}
+              hint={monthPlan.saveThisMonth > 0 ? t("worlds.reservedSaveFromGoals") : undefined}
+              amount={
+                monthPlan.saveThisMonth > 0 ? (
+                  money(monthPlan.saveThisMonth)
+                ) : (
+                  <Link
+                    href="/goals"
+                    className="text-[12px] font-medium text-neon underline-offset-2 hover:underline"
+                  >
+                    {t("worlds.reservedSaveEmpty")}
+                  </Link>
+                )
+              }
               onClick={() => updateSettings({ spendCountSave: !countSave })}
             />
+
             <EnvelopeToggle
               active={countDebt}
               label={t("worlds.reservedDebt")}
@@ -347,7 +395,86 @@ export default function MoneyPageClient() {
         }}
         editing={editingIncome}
       />
+      <SpendPotSheet open={spendPotOpen} onClose={() => setSpendPotOpen(false)} />
     </div>
+  );
+}
+
+function SpendPotSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { settings, updateSettings, monthPlan } = useFinance();
+  const { t, money } = useI18n();
+  const { toast } = useToast();
+  const [amount, setAmount] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    const current = settings.spendPotAmount ?? 0;
+    setAmount(current > 0 ? String(current) : "");
+  }, [open, settings.spendPotAmount]);
+
+  const value = num(amount);
+  const suggested = monthPlan.spendSuggested;
+
+  const submit = (next = value) => {
+    updateSettings({
+      spendPotAmount: Math.max(0, next),
+      spendCountSpend: next > 0,
+    });
+    toast(t("common.done"), { tone: "neon" });
+    onClose();
+  };
+
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={t("worlds.reservedSpendEdit")}
+      footer={
+        <Button variant="neon" size="lg" className="w-full" onClick={() => submit()}>
+          {t("common.save")}
+        </Button>
+      }
+    >
+      <p className="mb-4 text-[13px] leading-relaxed text-muted">
+        {t("worlds.reservedSpendHint")}
+      </p>
+
+      <div className="mb-4 rounded-2xl border border-neon/30 bg-neon/[0.06] p-3">
+        <div className="text-[12px] font-semibold text-muted">
+          {t("worlds.reservedSpendSuggested", { amount: money(suggested) })}
+        </div>
+        <p className="mt-1 text-[12px] leading-relaxed text-muted">
+          {suggested > 0
+            ? t("worlds.reservedSpendSuggestedExplain")
+            : t("worlds.reservedSpendSuggestedZero")}
+        </p>
+        <Button
+          variant="outline"
+          size="md"
+          className="mt-2.5 w-full"
+          disabled={suggested <= 0}
+          onClick={() => {
+            setAmount(String(suggested));
+            submit(suggested);
+          }}
+        >
+          {t("worlds.reservedSpendUseSuggested")} · {money(suggested)}
+        </Button>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="spend-pot">{t("worlds.reservedSpend")}</Label>
+        <MoneyInput
+          id="spend-pot"
+          symbol={CURRENCY_SYMBOL[settings.currency]}
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+          }}
+        />
+      </div>
+    </Sheet>
   );
 }
 
@@ -355,11 +482,15 @@ function EnvelopeToggle({
   active,
   label,
   amount,
+  hint,
+  inactive,
   onClick,
 }: {
   active: boolean;
   label: string;
-  amount: string;
+  amount: React.ReactNode;
+  hint?: string;
+  inactive?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -368,28 +499,38 @@ function EnvelopeToggle({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors",
+        "flex w-full flex-col gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-colors",
         active
           ? "border-neon/40 bg-neon/10"
           : "border-border bg-bg/40 opacity-70 hover:opacity-100",
+        inactive && !active && "opacity-50",
       )}
     >
-      <span className="flex min-w-0 items-center gap-2.5">
+      <span className="flex w-full items-center justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-2.5">
+          <span
+            className={cn(
+              "grid h-5 w-5 shrink-0 place-items-center rounded border text-[11px] font-bold",
+              active ? "border-neon bg-neon text-neon-ink" : "border-border text-transparent",
+            )}
+          >
+            {active ? "✓" : "·"}
+          </span>
+          <span className={cn("text-[13px] font-medium", active ? "text-ink" : "text-muted")}>
+            {label}
+          </span>
+        </span>
         <span
           className={cn(
-            "grid h-5 w-5 shrink-0 place-items-center rounded border text-[11px] font-bold",
-            active ? "border-neon bg-neon text-neon-ink" : "border-border text-transparent",
+            "shrink-0 text-right text-[13px] font-semibold",
+            typeof amount === "string" && active ? "tabular text-neon" : "",
+            typeof amount === "string" && !active ? "tabular text-muted" : "",
           )}
         >
-          {active ? "✓" : "·"}
-        </span>
-        <span className={cn("text-[13px] font-medium", active ? "text-ink" : "text-muted")}>
-          {label}
+          {amount}
         </span>
       </span>
-      <span className={cn("tabular shrink-0 text-[13px] font-semibold", active ? "text-neon" : "text-muted")}>
-        {amount}
-      </span>
+      {hint ? <span className="pl-7 text-[10px] text-muted">{hint}</span> : null}
     </button>
   );
 }

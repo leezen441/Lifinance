@@ -1,9 +1,8 @@
 /**
  * One plain story for the whole app: money in, money out, save, pay debts.
  *
- * The budget engine and the recommendation engine answer related but different
- * questions. The UI must not show both as competing headlines — this module
- * picks one set of numbers every screen can share.
+ * Envelopes (spend / save / debt) are amounts the user chose or that come from
+ * real goals and debt mins — not a hidden % of income.
  */
 
 import type {
@@ -40,8 +39,21 @@ export interface MonthPlan {
   /** True when moneyIn comes from settings, not the income log. */
   moneyInEstimated: boolean;
   moneyOut: number;
-  /** How much to put into savings this month. */
+  /**
+   * Day-to-day spend pot the user set (from income). 0 = not set.
+   */
+  spendPot: number;
+  /**
+   * Suggested spend pot = money in − save goals − debt payments.
+   * What is left for day-to-day after locking save + debt.
+   */
+  spendSuggested: number;
+  /**
+   * Sum of monthly contributions on Save-page goals — the real save envelope.
+   */
   saveThisMonth: number;
+  /** Engine suggestion only (for tips) — not what the Spend toggles use. */
+  saveSuggested: number;
   /** How much to send to debts this month (mins + spare). */
   payDebtsThisMonth: number;
   /** Minimums only. */
@@ -50,11 +62,10 @@ export interface MonthPlan {
   debtExtra: number;
   /** moneyIn − moneyOut − (selected envelopes). */
   leftToSpend: number;
-  /** Save + debt amounts currently counted toward left-to-spend. */
+  /** Amounts currently counted toward left-to-spend. */
   reserved: number;
-  /** Whether the save envelope is counted. */
+  countSpend: boolean;
   countSave: boolean;
-  /** Whether the debt envelope is counted. */
   countDebt: boolean;
   payOrder: PayOrderItem[];
   focusDebtId: string | null;
@@ -66,6 +77,11 @@ export interface MonthPlan {
 
 function inCurrentMonth(date: string, monthStart: string, today: string): boolean {
   return date >= monthStart && date <= today;
+}
+
+/** Monthly save envelope = what the user set on goals, nothing else. */
+export function saveFromGoals(goals: Goal[]): number {
+  return goals.reduce((s, g) => s + Math.max(0, g.monthlyContribution), 0);
 }
 
 export function buildMonthPlan(input: {
@@ -94,20 +110,24 @@ export function buildMonthPlan(input: {
     .filter((e) => inCurrentMonth(e.date, monthStart, today))
     .reduce((s, e) => s + e.amount, 0);
 
-  const goalContributions = input.goals.reduce(
-    (s, g) => s + Math.max(0, g.monthlyContribution),
-    0,
-  );
-  const saveThisMonth = Math.max(input.recommendation.savings, goalContributions);
+  const spendPot = Math.max(0, input.settings.spendPotAmount ?? 0);
+  const saveThisMonth = saveFromGoals(input.goals);
+  const saveSuggested = Math.max(0, input.recommendation.savings);
 
   const debtMinimums = input.budget.minimumPayments;
   const debtExtra = input.budget.availableExtra;
   const payDebtsThisMonth = debtMinimums + debtExtra;
 
+  // After locking save + debt, this is what is left for day-to-day spending.
+  const spendSuggested = Math.max(0, Math.round(moneyIn - saveThisMonth - payDebtsThisMonth));
+
+  const countSpend = input.settings.spendCountSpend !== false && spendPot > 0;
   const countSave = input.settings.spendCountSave !== false;
   const countDebt = input.settings.spendCountDebt !== false;
   const reserved =
-    (countSave ? saveThisMonth : 0) + (countDebt ? payDebtsThisMonth : 0);
+    (countSpend ? spendPot : 0) +
+    (countSave ? saveThisMonth : 0) +
+    (countDebt ? payDebtsThisMonth : 0);
   const leftToSpend = moneyIn - moneyOut - reserved;
 
   const activeDebts = input.debts.filter((d) => !d.archivedAt && d.balance > 0);
@@ -117,7 +137,6 @@ export function buildMonthPlan(input: {
     return a.payoffMonth - b.payoffMonth;
   });
 
-  // Prefer engine order; fall back to list order if the plan is empty.
   const orderedIds =
     orderedDetails.length > 0
       ? orderedDetails.map((d) => d.debtId)
@@ -153,12 +172,16 @@ export function buildMonthPlan(input: {
     moneyIn,
     moneyInEstimated,
     moneyOut,
+    spendPot,
+    spendSuggested,
     saveThisMonth,
+    saveSuggested,
     payDebtsThisMonth,
     debtMinimums,
     debtExtra,
     leftToSpend,
     reserved,
+    countSpend,
     countSave,
     countDebt,
     payOrder,

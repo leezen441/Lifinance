@@ -138,6 +138,15 @@ export interface Settings {
   /** Trailing window (days) used to learn the real spending rate. */
   spendWindowDays: 30 | 60 | 90;
   /**
+   * Monthly "spend pot" — how much of income is set aside for day-to-day
+   * spending. 0 = not set yet.
+   */
+  spendPotAmount: number;
+  /**
+   * On the Spend screen: subtract the spend pot when computing left-to-spend.
+   */
+  spendCountSpend: boolean;
+  /**
    * On the Spend screen: subtract the "save this month" envelope when
    * computing left-to-spend.
    */

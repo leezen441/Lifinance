@@ -77,11 +77,12 @@ export default function GoalsPage() {
             {money(saveTarget)}
           </div>
           <p className="mt-2 text-[13px] leading-relaxed text-muted">
-            {t("worlds.saveHeroExplain")}
+            {saveTarget > 0 ? t("worlds.saveHeroExplain") : t("worlds.saveHeroEmpty")}
           </p>
         </div>
 
         {emergency ? (
+          saveTarget > 0 ? (
           <div className="rounded-2xl border border-border bg-surface-2 p-3">
             <p className="mb-2.5 text-[12px] text-muted">{t("worlds.saveHeroActionHint")}</p>
             <div className="flex flex-wrap gap-2">
@@ -103,6 +104,7 @@ export default function GoalsPage() {
               → {emergency.emoji} {emergency.name}
             </p>
           </div>
+          ) : null
         ) : (
           <div className="space-y-2 rounded-2xl border border-border bg-surface-2 p-3">
             <p className="text-[13px] leading-relaxed text-muted">{t("worlds.emergencySuggest")}</p>
