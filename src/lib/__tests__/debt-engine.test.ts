@@ -16,6 +16,7 @@ import {
 } from "../debt-engine";
 import { buildSpendProfile, computeBudget } from "../budget-engine";
 import { DEFAULT_ANSWERS, estimateMonthly, estimateTotal } from "../assessment";
+import { buildMonthPlan } from "../month-plan";
 import { recommendBudget } from "../recommend";
 import type { Category, Debt, Expense, Goal, Settings } from "../types";
 import { toISODate, addDays } from "../date";
@@ -283,6 +284,37 @@ test("the assessment turns answers into a plausible monthly estimate", () => {
   assert.ok(estimateTotal(estimate) > 12_000);
 });
 
+test("amount overrides replace table estimates", () => {
+  const estimate = estimateMonthly({
+    ...DEFAULT_ANSWERS,
+    housing: "rent_alone",
+    housingCost: 12_000,
+    transport: "car",
+    transportIntensity: "mid",
+    amountOverrides: { cat_fuel: 6_000, cat_rent: 15_000 },
+  });
+  assert.equal(estimate["cat_fuel"], 6_000);
+  assert.equal(estimate["cat_rent"], 15_000);
+});
+
+test("custom subscription amounts beat the defaults", () => {
+  const estimate = estimateMonthly({
+    ...DEFAULT_ANSWERS,
+    subscriptions: ["streaming_video"],
+    subscriptionAmounts: { streaming_video: 199 },
+  });
+  assert.equal(estimate["cat_streaming"], 199);
+});
+
+test("family support lands in an essential category", () => {
+  const estimate = estimateMonthly({
+    ...DEFAULT_ANSWERS,
+    familySupport: 5_000,
+  });
+  assert.equal(estimate["cat_family_support"], 5_000);
+  assert.equal(estimate["cat_misc"], undefined);
+});
+
 test("cooking habit moves groceries and eating out in opposite directions", () => {
   const cooks = estimateMonthly({ ...DEFAULT_ANSWERS, cooking: "mostly" });
   const doesnt = estimateMonthly({ ...DEFAULT_ANSWERS, cooking: "never" });
@@ -384,4 +416,49 @@ test("essentials are never squeezed, whatever the keep ratio", () => {
   const budget = computeBudget({ ...settings, lifestyleKeepRatio: 0 }, profile, [], []);
   assert.equal(Math.round(budget.essentials), 12_000);
   assert.ok(budget.availableExtra <= settings.monthlyIncome - 12_000);
+});
+
+test("month plan: left to spend = in − out − save − debt", () => {
+  const debts = [debt({ id: "a", balance: 10_000, apr: 20, minPayment: 1_000 })];
+  const expenses: Expense[] = [
+    expense({
+      id: "coffee",
+      categoryId: "c_coffee",
+      amount: 500,
+      date: toISODate(NOW),
+    }),
+  ];
+  const incomes = [
+    {
+      id: "pay",
+      amount: 40_000,
+      date: toISODate(NOW),
+      kind: "salary" as const,
+      createdAt: toISODate(NOW),
+    },
+  ];
+  const profile = buildSpendProfile(expenses, categories, 30, NOW);
+  const budget = computeBudget(settings, profile, debts, []);
+  const rec = recommendBudget(settings.monthlyIncome, profile, debts, [], () => false);
+  const { plan } = buildPlan(debts, budget.availableExtra, "avalanche");
+  const month = buildMonthPlan({
+    settings,
+    incomes,
+    expenses,
+    debts,
+    goals: [],
+    budget,
+    recommendation: rec,
+    plan,
+    now: NOW,
+  });
+  assert.equal(month.moneyIn, 40_000);
+  assert.equal(month.moneyInEstimated, false);
+  assert.equal(month.moneyOut, 500);
+  assert.equal(
+    month.leftToSpend,
+    month.moneyIn - month.moneyOut - month.saveThisMonth - month.payDebtsThisMonth,
+  );
+  assert.ok(month.payOrder.length >= 1);
+  assert.equal(month.payOrder[0].isFocus, true);
 });

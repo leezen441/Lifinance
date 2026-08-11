@@ -9,7 +9,7 @@
  *
  * The constants below are ballpark Bangkok figures. They are deliberately
  * middle-of-the-road: the estimate only has to be close enough to plan with,
- * and every number stays editable afterwards.
+ * and every number stays editable afterwards — including mid-quiz overrides.
  */
 
 import { DAYS_PER_MONTH } from "./date";
@@ -40,10 +40,17 @@ export interface QuizAnswers {
   /** Food delivery orders per week. */
   delivery: number;
   subscriptions: string[];
+  /** Custom monthly price per subscription id (falls back to the table). */
+  subscriptionAmounts: Record<string, number>;
   pets: PetKind;
   petCount: number;
   hobbies: string[];
   hobbyIntensity: Intensity;
+  /**
+   * Per-category monthly overrides (`cat_*` ids). Win over table estimates so
+   * the user can type what they actually spend.
+   */
+  amountOverrides: Record<string, number>;
 }
 
 export const DEFAULT_ANSWERS: QuizAnswers = {
@@ -60,10 +67,12 @@ export const DEFAULT_ANSWERS: QuizAnswers = {
   drinkPrice: "mid",
   delivery: 2,
   subscriptions: [],
+  subscriptionAmounts: {},
   pets: "none",
   petCount: 1,
   hobbies: [],
   hobbyIntensity: "mid",
+  amountOverrides: {},
 };
 
 /* ------------------------------------------------------------------ */
@@ -137,7 +146,7 @@ export const HOBBY_OPTIONS = [
 /* ------------------------------------------------------------------ */
 
 /** `cat_<key>` ids match the seeded categories. */
-function catId(key: string): string {
+export function catId(key: string): string {
   return `cat_${key}`;
 }
 
@@ -146,13 +155,23 @@ function add(map: Map<string, number>, key: string, amount: number) {
   map.set(catId(key), (map.get(catId(key)) ?? 0) + amount);
 }
 
+/** Normalize older saved answers (retake) so new fields always exist. */
+export function normalizeAnswers(raw: Partial<QuizAnswers> | null | undefined): QuizAnswers {
+  return {
+    ...DEFAULT_ANSWERS,
+    ...(raw ?? {}),
+    subscriptions: raw?.subscriptions ?? [],
+    hobbies: raw?.hobbies ?? [],
+    subscriptionAmounts: raw?.subscriptionAmounts ?? {},
+    amountOverrides: raw?.amountOverrides ?? {},
+  };
+}
+
 /**
- * Turn answers into `{ categoryId: monthlyAmount }`.
- *
- * Everything here is a monthly figure, so it drops straight into the budget
- * engine next to real tracked spending.
+ * Table-driven estimate only — ignores `amountOverrides` so the UI can show
+ * "suggested vs what you typed".
  */
-export function estimateMonthly(answers: QuizAnswers): Record<string, number> {
+export function estimateMonthlyBase(answers: QuizAnswers): Record<string, number> {
   const out = new Map<string, number>();
 
   // --- fixed commitments ---
@@ -160,9 +179,8 @@ export function estimateMonthly(answers: QuizAnswers): Record<string, number> {
   add(out, "utilities", answers.utilities);
   add(out, "phone", answers.phone);
   add(out, "insurance", answers.insurance);
-  // Money sent home has no dedicated category; it is essential, so it lands in
-  // the essential "misc" bucket rather than being quietly dropped.
-  add(out, "misc", answers.familySupport);
+  // Dedicated essential category so family support is never lifestyle-trimmed.
+  add(out, "family_support", answers.familySupport);
 
   // --- getting around ---
   const transport = TRANSPORT[answers.transport][answers.transportIntensity];
@@ -186,7 +204,9 @@ export function estimateMonthly(answers: QuizAnswers): Record<string, number> {
   // --- subscriptions ---
   for (const id of answers.subscriptions) {
     const sub = SUBSCRIPTION_OPTIONS.find((s) => s.id === id);
-    if (sub) add(out, sub.category, sub.monthly);
+    if (!sub) continue;
+    const monthly = answers.subscriptionAmounts[id] ?? sub.monthly;
+    add(out, sub.category, monthly);
   }
 
   // --- pets ---
@@ -207,9 +227,89 @@ export function estimateMonthly(answers: QuizAnswers): Record<string, number> {
   return Object.fromEntries([...out].map(([k, v]) => [k, Math.round(v)]));
 }
 
+/** Merge table estimates with user-typed monthly amounts. */
+export function applyAmountOverrides(
+  base: Record<string, number>,
+  overrides?: Record<string, number>,
+): Record<string, number> {
+  if (!overrides || Object.keys(overrides).length === 0) return base;
+  const out: Record<string, number> = { ...base };
+  for (const [id, amount] of Object.entries(overrides)) {
+    if (!Number.isFinite(amount)) continue;
+    // 0 means "I don't spend this" — drop it from the plan.
+    if (amount <= 0) delete out[id];
+    else out[id] = Math.round(amount);
+  }
+  return out;
+}
+
+/**
+ * Turn answers into `{ categoryId: monthlyAmount }`.
+ *
+ * Everything here is a monthly figure, so it drops straight into the budget
+ * engine next to real tracked spending.
+ */
+export function estimateMonthly(answers: QuizAnswers): Record<string, number> {
+  return applyAmountOverrides(estimateMonthlyBase(answers), answers.amountOverrides);
+}
+
 /** Total of an estimate map. */
 export function estimateTotal(estimate: Record<string, number>): number {
   return Object.values(estimate).reduce((s, v) => s + v, 0);
+}
+
+/**
+ * Category ids the user can tweak on a given step (suggested from the current
+ * answers). Empty for steps that already collect exact baht amounts.
+ */
+export function adjustableCategoryIds(step: QuizStep, answers: QuizAnswers): string[] {
+  switch (step) {
+    case "transport": {
+      const t = TRANSPORT[answers.transport][answers.transportIntensity];
+      const ids: string[] = [];
+      if (t.fuel != null) ids.push(catId("fuel"));
+      if (t.transit != null) ids.push(catId("transit"));
+      if (t.ride != null) ids.push(catId("ride_hailing"));
+      return ids;
+    }
+    case "food":
+      return [catId("groceries"), catId("eating_out")];
+    case "drinks":
+      return [catId("coffee"), catId("matcha")];
+    case "delivery":
+      return [catId("delivery")];
+    case "pets":
+      return answers.pets === "none"
+        ? []
+        : [catId("cat_food"), catId("pet_supplies"), catId("vet")];
+    case "hobbies":
+      return HOBBY_OPTIONS.filter((h) => answers.hobbies.includes(h.id)).map((h) =>
+        catId(h.category),
+      );
+    default:
+      return [];
+  }
+}
+
+/**
+ * Drop overrides that no longer belong to the table estimate (e.g. user
+ * switched from car → transit, so a fuel override would be stale).
+ * Keeps overrides the user set on the review for categories still present,
+ * and also keeps explicit zeros out.
+ */
+export function pruneOverrides(
+  base: Record<string, number>,
+  overrides: Record<string, number>,
+): Record<string, number> {
+  const next: Record<string, number> = {};
+  for (const [id, amount] of Object.entries(overrides)) {
+    // Keep only overrides for categories the table still produces.
+    if (!(id in base) || !Number.isFinite(amount)) continue;
+    // Identical to the suggestion — no need to keep a redundant override.
+    if (amount > 0 && Math.round(amount) === Math.round(base[id] ?? 0)) continue;
+    next[id] = Math.round(amount);
+  }
+  return next;
 }
 
 /** The ten steps, in order. The UI renders these generically. */

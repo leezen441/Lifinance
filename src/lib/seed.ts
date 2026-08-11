@@ -7,7 +7,7 @@
  * tracker you stop opening after four days.
  */
 
-import type { AppState, Category, Debt, Expense, Goal, Settings } from "./types";
+import type { AppState, Category, Debt, Expense, Goal, IncomeEntry, Settings } from "./types";
 import { addDays, toISODate } from "./date";
 
 export const STORAGE_KEY = "lifinance.state.v1";
@@ -21,6 +21,7 @@ export const DEFAULT_CATEGORIES: Omit<Category, "id">[] = [
   { key: "groceries", group: "essential", emoji: "🛒", isEssential: true, quickAmounts: [200, 500, 1000], isCustom: false },
   { key: "phone", group: "essential", emoji: "📶", isEssential: true, quickAmounts: [], isCustom: false },
   { key: "insurance", group: "essential", emoji: "🛡️", isEssential: true, quickAmounts: [], isCustom: false },
+  { key: "family_support", group: "essential", emoji: "👨‍👩‍👧", isEssential: true, quickAmounts: [], isCustom: false },
 
   // --- Tech & subscriptions --------------------------------------------
   { key: "ai_tools", group: "tech", emoji: "🤖", isEssential: false, quickAmounts: [700, 800], isCustom: false },
@@ -81,6 +82,7 @@ export function emptyState(): AppState {
     settings: { ...DEFAULT_SETTINGS },
     categories: buildCategories(),
     expenses: [],
+    incomes: [],
     debts: [],
     goals: [],
   };
@@ -234,6 +236,16 @@ export function demoState(now: Date = new Date()): AppState {
     },
     categories,
     expenses,
+    incomes: [
+      {
+        id: "inc_salary",
+        amount: 58_000,
+        kind: "salary",
+        date: toISODate(new Date(now.getFullYear(), now.getMonth(), Math.min(25, now.getDate()))),
+        createdAt: toISODate(now),
+        note: "Payday",
+      } satisfies IncomeEntry,
+    ],
     debts,
     goals,
   };

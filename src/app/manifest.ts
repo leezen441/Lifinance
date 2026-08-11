@@ -47,14 +47,14 @@ export default function manifest(): MetadataRoute.Manifest {
     // actually open the app to do.
     shortcuts: [
       {
-        name: "Log a spend · บันทึกรายจ่าย",
-        short_name: "Log",
-        url: "/expenses",
+        name: "Money in/out · เงินเข้า-ออก",
+        short_name: "Spend",
+        url: "/money",
         icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
       },
       {
-        name: "Debts · หนี้สิน",
-        short_name: "Debts",
+        name: "Debts · หนี้",
+        short_name: "Debt",
         url: "/debts",
         icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
       },

@@ -10,9 +10,9 @@ import { ThemeToggle } from "./ThemeToggle";
 
 const NAV = [
   { href: "/", key: "nav.home", icon: Home },
-  { href: "/debts", key: "nav.debts", icon: CreditCard },
-  { href: "/expenses", key: "nav.expenses", icon: Receipt },
+  { href: "/money", key: "nav.expenses", icon: Receipt },
   { href: "/goals", key: "nav.goals", icon: PiggyBank },
+  { href: "/debts", key: "nav.debts", icon: CreditCard },
   { href: "/settings", key: "nav.settings", icon: Settings2 },
 ] as const;
 

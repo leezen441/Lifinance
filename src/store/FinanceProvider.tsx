@@ -5,11 +5,8 @@
  *
  * Offline-first: state lives in localStorage, so the app works on a plane and
  * no financial data leaves the device. Every derived number (payoff plan,
- * budget, spend profile) is memoised here so the dashboard reads them like
- * plain props instead of recomputing a 200-month simulation per render.
- *
- * Swapping to a real backend = replace `persist`/`load` with fetch calls; the
- * shape of `AppState` already matches the Prisma models.
+ * budget, spend profile, month plan) is memoised here so screens read them
+ * like plain props instead of recomputing a 200-month simulation per render.
  */
 
 import {
@@ -28,6 +25,7 @@ import type {
   Debt,
   Expense,
   Goal,
+  IncomeEntry,
   Language,
   PayoffPlan,
   Settings,
@@ -37,25 +35,26 @@ import type {
   ThemeMode,
 } from "@/lib/types";
 import type { BudgetRecommendation } from "@/lib/recommend";
-import { emptyState, demoState, STORAGE_KEY, STATE_VERSION } from "@/lib/seed";
+import type { MonthPlan } from "@/lib/month-plan";
+import { emptyState, demoState, STORAGE_KEY, STATE_VERSION, DEFAULT_CATEGORIES } from "@/lib/seed";
 import { buildPlan, minimumsOnlyPlan } from "@/lib/debt-engine";
 import { buildSpendProfile, computeBudget } from "@/lib/budget-engine";
 import { recommendBudget } from "@/lib/recommend";
+import { buildMonthPlan } from "@/lib/month-plan";
 import { todayISO } from "@/lib/date";
 import { uid } from "@/lib/utils";
 
 interface Derived {
   profile: SpendProfile;
   budget: BudgetBreakdown;
-  /** "How much should I spend each month" — see lib/recommend.ts */
   recommendation: BudgetRecommendation;
   plan: PayoffPlan;
   comparison: StrategyComparison;
-  /** The plan if you only ever pay minimums — what `monthsSaved` compares to. */
   minimumsPlan: PayoffPlan;
-  /** Months the extra payment buys versus paying minimums only. */
   monthsSaved: number;
   interestSaved: number;
+  /** Single story for Spend / Save / Debt screens. */
+  monthPlan: MonthPlan;
 }
 
 interface FinanceValue extends Derived {
@@ -65,11 +64,11 @@ interface FinanceValue extends Derived {
   settings: Settings;
   categories: Category[];
   expenses: Expense[];
+  incomes: IncomeEntry[];
   debts: Debt[];
   goals: Goal[];
   baseline?: SpendingBaseline;
 
-  /** Save the assessment result. Clearing it falls back to tracked data only. */
   setBaseline: (baseline: SpendingBaseline | undefined) => void;
 
   updateSettings: (patch: Partial<Settings>) => void;
@@ -79,6 +78,10 @@ interface FinanceValue extends Derived {
   addExpense: (input: Omit<Expense, "id" | "createdAt"> & { date?: string }) => Expense;
   updateExpense: (id: string, patch: Partial<Expense>) => void;
   removeExpense: (id: string) => void;
+
+  addIncome: (input: Omit<IncomeEntry, "id" | "createdAt"> & { date?: string }) => IncomeEntry;
+  updateIncome: (id: string, patch: Partial<IncomeEntry>) => void;
+  removeIncome: (id: string) => void;
 
   addCategory: (input: Omit<Category, "id" | "isCustom">) => Category;
   updateCategory: (id: string, patch: Partial<Category>) => void;
@@ -101,6 +104,33 @@ interface FinanceValue extends Derived {
 
 const FinanceContext = createContext<FinanceValue | null>(null);
 
+/** Ensure newly added built-in categories appear for existing local saves. */
+function mergeMissingCategories(state: AppState): AppState {
+  const have = new Set(state.categories.map((c) => c.key));
+  const missing = DEFAULT_CATEGORIES.filter((c) => !have.has(c.key)).map((c) => ({
+    ...c,
+    id: `cat_${c.key}`,
+  }));
+  if (missing.length === 0) return state;
+  return { ...state, categories: [...state.categories, ...missing] };
+}
+
+/** Older saves may lack `incomes` — fill the gap without wiping data. */
+function migrateState(raw: AppState): AppState {
+  const withDefaults: AppState = {
+    ...emptyState(),
+    ...raw,
+    version: STATE_VERSION,
+    incomes: Array.isArray(raw.incomes) ? raw.incomes : [],
+    expenses: Array.isArray(raw.expenses) ? raw.expenses : [],
+    debts: Array.isArray(raw.debts) ? raw.debts : [],
+    goals: Array.isArray(raw.goals) ? raw.goals : [],
+    categories: Array.isArray(raw.categories) ? raw.categories : emptyState().categories,
+    settings: { ...emptyState().settings, ...(raw.settings ?? {}) },
+  };
+  return mergeMissingCategories(withDefaults);
+}
+
 function load(): AppState | null {
   if (typeof window === "undefined") return null;
   try {
@@ -108,17 +138,13 @@ function load(): AppState | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as AppState;
     if (typeof parsed !== "object" || parsed === null) return null;
-    // Future migrations hang off this check.
-    if (parsed.version !== STATE_VERSION) return { ...emptyState(), ...parsed, version: STATE_VERSION };
-    return parsed;
+    return migrateState(parsed);
   } catch {
     return null;
   }
 }
 
 export function FinanceProvider({ children }: { children: React.ReactNode }) {
-  // Start from `emptyState()` on both server and first client render so the
-  // markup matches; real data arrives in the effect below.
   const [state, setState] = useState<AppState>(() => emptyState());
   const [hydrated, setHydrated] = useState(false);
   const skipPersist = useRef(true);
@@ -141,8 +167,6 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       // Quota exceeded or private mode — the app keeps working in memory.
     }
   }, [state, hydrated]);
-
-  /* ---------------------------- mutations ---------------------------- */
 
   const patch = useCallback((fn: (prev: AppState) => AppState) => setState(fn), []);
 
@@ -186,6 +210,40 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [patch],
   );
 
+  const addIncome = useCallback<FinanceValue["addIncome"]>(
+    (input) => {
+      const entry: IncomeEntry = {
+        id: uid("inc"),
+        createdAt: new Date().toISOString(),
+        date: input.date ?? todayISO(),
+        amount: input.amount,
+        note: input.note,
+        kind: input.kind,
+      };
+      patch((s) => ({ ...s, incomes: [entry, ...(s.incomes ?? [])] }));
+      return entry;
+    },
+    [patch],
+  );
+
+  const updateIncome = useCallback<FinanceValue["updateIncome"]>(
+    (id, p) =>
+      patch((s) => ({
+        ...s,
+        incomes: (s.incomes ?? []).map((e) => (e.id === id ? { ...e, ...p } : e)),
+      })),
+    [patch],
+  );
+
+  const removeIncome = useCallback<FinanceValue["removeIncome"]>(
+    (id) =>
+      patch((s) => ({
+        ...s,
+        incomes: (s.incomes ?? []).filter((e) => e.id !== id),
+      })),
+    [patch],
+  );
+
   const addCategory = useCallback<FinanceValue["addCategory"]>(
     (input) => {
       const category: Category = { ...input, id: uid("cat"), isCustom: true };
@@ -208,8 +266,6 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     (id) =>
       patch((s) => ({
         ...s,
-        // Expenses keep their history; the category is archived, not deleted,
-        // so past totals never silently change.
         categories: s.categories.map((c) => (c.id === id ? { ...c, archived: true } : c)),
       })),
     [patch],
@@ -275,8 +331,6 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
   const resetAll = useCallback(() => {
     const fresh = emptyState();
-    // Keep the language/theme the user already chose — resetting data should
-    // not throw them back into the wrong language.
     setState((prev) => ({
       ...fresh,
       settings: {
@@ -296,16 +350,15 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       if (!parsed || !Array.isArray(parsed.debts) || !Array.isArray(parsed.expenses)) {
         return false;
       }
-      setState({ ...emptyState(), ...parsed, version: STATE_VERSION });
+      setState(migrateState(parsed));
       return true;
     } catch {
       return false;
     }
   }, []);
 
-  /* ----------------------------- derived ----------------------------- */
-
   const { settings, categories, expenses, debts, goals } = state;
+  const incomes = state.incomes ?? [];
 
   const profile = useMemo(
     () =>
@@ -348,6 +401,21 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     return Math.max(0, minimumsPlan.totalInterest - plan.totalInterest);
   }, [plan, minimumsPlan]);
 
+  const monthPlan = useMemo(
+    () =>
+      buildMonthPlan({
+        settings,
+        incomes,
+        expenses,
+        debts,
+        goals,
+        budget,
+        recommendation,
+        plan,
+      }),
+    [settings, incomes, expenses, debts, goals, budget, recommendation, plan],
+  );
+
   const value = useMemo<FinanceValue>(
     () => ({
       hydrated,
@@ -355,6 +423,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       settings,
       categories,
       expenses,
+      incomes,
       debts,
       goals,
       baseline: state.baseline,
@@ -367,12 +436,16 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       minimumsPlan,
       monthsSaved,
       interestSaved,
+      monthPlan,
       updateSettings,
       setLanguage,
       setTheme,
       addExpense,
       updateExpense,
       removeExpense,
+      addIncome,
+      updateIncome,
+      removeIncome,
       addCategory,
       updateCategory,
       removeCategory,
@@ -389,10 +462,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       importJSON,
     }),
     [
-      hydrated, state, settings, categories, expenses, debts, goals,
+      hydrated, state, settings, categories, expenses, incomes, debts, goals,
       setBaseline, profile, budget, recommendation, plan, comparison,
-      minimumsPlan, monthsSaved, interestSaved,
+      minimumsPlan, monthsSaved, interestSaved, monthPlan,
       updateSettings, setLanguage, setTheme, addExpense, updateExpense, removeExpense,
+      addIncome, updateIncome, removeIncome,
       addCategory, updateCategory, removeCategory, addDebt, updateDebt, removeDebt,
       addGoal, updateGoal, removeGoal, contributeToGoal, loadDemo, resetAll,
       exportJSON, importJSON,

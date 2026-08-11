@@ -30,7 +30,7 @@ export function SpendingBreakdown() {
         })}
         action={
           <Link
-            href="/expenses"
+            href="/money"
             className="text-[13px] font-medium text-neon underline-offset-2 hover:underline"
           >
             {t("expenses.title")}

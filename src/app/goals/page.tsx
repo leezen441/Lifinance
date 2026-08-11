@@ -24,11 +24,29 @@ const MILESTONE_KEYS = {
 } as const;
 
 export default function GoalsPage() {
-  const { goals, removeGoal, contributeToGoal } = useFinance();
+  const { goals, removeGoal, contributeToGoal, monthPlan, addGoal } = useFinance();
   const { t, money, percent, monthYear } = useI18n();
   const { toast } = useToast();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
+
+  const emergency = goals.find((g) => g.isEmergencyFund);
+  const saveTarget = monthPlan.saveThisMonth;
+
+  const quickSave = (goalId: string, amount: number) => {
+    const g = goals.find((x) => x.id === goalId);
+    if (!g) return;
+    const before = g.target > 0 ? g.saved / g.target : 0;
+    contributeToGoal(goalId, amount);
+    const after = g.target > 0 ? (g.saved + amount) / g.target : 0;
+    const crossed = MILESTONES.find((m) => before < m && after >= m);
+    toast(
+      crossed
+        ? `${t("dashboard.milestoneHit")} ${t(MILESTONE_KEYS[crossed])}`
+        : `+${money(amount)} · ${g.name}`,
+      { tone: crossed ? "neon" : "plain" },
+    );
+  };
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -49,6 +67,55 @@ export default function GoalsPage() {
           {t("goals.add")}
         </Button>
       </div>
+
+      <Card neon className="text-center">
+        <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+          {t("worlds.saveThisMonth")}
+        </div>
+        <div className="tabular mt-1 text-4xl font-bold tracking-tight text-neon text-glow">
+          {money(saveTarget)}
+        </div>
+        <p className="mt-2 text-[12px] text-muted">{t("worlds.saveSub")}</p>
+        {emergency ? (
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {[Math.round(saveTarget) || 1000, 500, 1000, 2000]
+              .filter((v, i, a) => v > 0 && a.indexOf(v) === i)
+              .slice(0, 3)
+              .map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  onClick={() => quickSave(emergency.id, amount)}
+                  className="tabular rounded-xl border border-neon/40 bg-neon/10 px-3.5 py-2 text-[13px] font-semibold text-neon transition-colors hover:bg-neon/20"
+                >
+                  {t("worlds.saveIntoGoal")} +{money(amount)}
+                </button>
+              ))}
+          </div>
+        ) : (
+          <div className="mt-4 space-y-2">
+            <p className="text-[13px] text-muted">{t("worlds.emergencySuggest")}</p>
+            <Button
+              variant="outline"
+              size="md"
+              onClick={() => {
+                addGoal({
+                  name: t("goals.emergency"),
+                  emoji: "🛟",
+                  target: Math.max(10_000, Math.round(saveTarget * 6) || 30_000),
+                  saved: 0,
+                  monthlyContribution: Math.round(saveTarget) || 1000,
+                  isEmergencyFund: true,
+                });
+                toast(t("worlds.createEmergency"), { tone: "neon" });
+              }}
+            >
+              <ShieldCheck size={16} />
+              {t("worlds.createEmergency")}
+            </Button>
+          </div>
+        )}
+      </Card>
 
       {goals.length === 0 ? (
         <Card>
@@ -90,6 +157,7 @@ export default function GoalsPage() {
                   </div>
                   <div className="flex shrink-0 gap-1">
                     <button
+                      type="button"
                       onClick={() => {
                         setEditing(g);
                         setSheetOpen(true);
@@ -99,6 +167,7 @@ export default function GoalsPage() {
                       {t("common.edit")}
                     </button>
                     <button
+                      type="button"
                       onClick={() => {
                         if (confirm(t("common.confirmDelete"))) removeGoal(g.id);
                       }}
@@ -148,18 +217,8 @@ export default function GoalsPage() {
                   {[500, 1000, 2000].map((amount) => (
                     <button
                       key={amount}
-                      onClick={() => {
-                        const before = progress;
-                        contributeToGoal(g.id, amount);
-                        const after = g.target > 0 ? (g.saved + amount) / g.target : 0;
-                        const crossed = MILESTONES.find((m) => before < m && after >= m);
-                        toast(
-                          crossed
-                            ? `${t("dashboard.milestoneHit")} ${t(MILESTONE_KEYS[crossed])}`
-                            : `+${money(amount)} · ${g.name}`,
-                          { tone: crossed ? "neon" : "plain" },
-                        );
-                      }}
+                      type="button"
+                      onClick={() => quickSave(g.id, amount)}
                       className="tabular rounded-xl border border-border bg-surface-2 px-3 py-2 text-[13px] font-medium transition-colors hover:border-neon/60 hover:text-neon"
                     >
                       +{money(amount)}

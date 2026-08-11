@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { Card } from "@/components/ui/Card";
@@ -13,11 +13,16 @@ import { useToast } from "@/components/ui/Toast";
 import { CURRENCY_SYMBOL } from "@/lib/format";
 import { categoryLabel } from "@/lib/category";
 import { cn, num } from "@/lib/utils";
+import type { Category, Language } from "@/lib/types";
 import {
+  adjustableCategoryIds,
   DEFAULT_ANSWERS,
   estimateMonthly,
+  estimateMonthlyBase,
   estimateTotal,
   HOBBY_OPTIONS,
+  normalizeAnswers,
+  pruneOverrides,
   QUIZ_STEPS,
   SUBSCRIPTION_OPTIONS,
   type Intensity,
@@ -29,7 +34,8 @@ import {
  *
  * One question per screen with big tap targets — a ten-field form on a phone is
  * a form nobody finishes. Every answer has a sane default, so "Next" all the
- * way through still produces a usable estimate.
+ * way through still produces a usable estimate. Amounts that used to be locked
+ * behind intensity tables are editable on each step and again on the review.
  */
 export default function AssessmentPage() {
   const router = useRouter();
@@ -38,8 +44,8 @@ export default function AssessmentPage() {
   const { toast } = useToast();
 
   const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<QuizAnswers>(
-    () => (baseline?.answers as QuizAnswers | undefined) ?? DEFAULT_ANSWERS,
+  const [answers, setAnswers] = useState<QuizAnswers>(() =>
+    normalizeAnswers((baseline?.answers as Partial<QuizAnswers> | undefined) ?? DEFAULT_ANSWERS),
   );
   const [income, setIncome] = useState(
     settings.monthlyIncome > 0 ? String(settings.monthlyIncome) : "",
@@ -54,22 +60,93 @@ export default function AssessmentPage() {
       [key]: a[key].includes(id) ? a[key].filter((x) => x !== id) : [...a[key], id],
     }));
 
+  const setOverride = (categoryId: string, amount: number) =>
+    setAnswers((a) => {
+      const amountOverrides = { ...a.amountOverrides };
+      // Keep 0 so the row stays editable while the user clears/retypes.
+      if (!Number.isFinite(amount) || amount < 0) delete amountOverrides[categoryId];
+      else amountOverrides[categoryId] = amount;
+      return { ...a, amountOverrides };
+    });
+
+  const setSubAmount = (subId: string, amount: number) =>
+    setAnswers((a) => {
+      const subscriptionAmounts = { ...a.subscriptionAmounts };
+      if (amount <= 0) delete subscriptionAmounts[subId];
+      else subscriptionAmounts[subId] = amount;
+      return { ...a, subscriptionAmounts };
+    });
+
+  // Drop stale overrides when the underlying suggestion set changes
+  // (e.g. switched from car → BTS so a fuel override no longer applies).
+  useEffect(() => {
+    const base = estimateMonthlyBase({ ...answers, amountOverrides: {} });
+    const pruned = pruneOverrides(base, answers.amountOverrides);
+    if (JSON.stringify(pruned) !== JSON.stringify(answers.amountOverrides)) {
+      setAnswers((a) => ({ ...a, amountOverrides: pruned }));
+    }
+    // Only re-prune when the answer fields that rebuild the base change —
+    // not when amountOverrides itself changes (that would fight the user).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    answers.housing,
+    answers.housingCost,
+    answers.utilities,
+    answers.phone,
+    answers.insurance,
+    answers.familySupport,
+    answers.transport,
+    answers.transportIntensity,
+    answers.cooking,
+    answers.drinks,
+    answers.drinkPrice,
+    answers.delivery,
+    answers.subscriptions,
+    answers.subscriptionAmounts,
+    answers.pets,
+    answers.petCount,
+    answers.hobbies,
+    answers.hobbyIntensity,
+  ]);
+
+  const baseEstimate = useMemo(
+    () => estimateMonthlyBase({ ...answers, amountOverrides: {} }),
+    [answers],
+  );
   const estimate = useMemo(() => estimateMonthly(answers), [answers]);
   const total = estimateTotal(estimate);
+  /** Review rows stay visible even when an amount is temporarily cleared to 0. */
+  const reviewRows = useMemo(() => {
+    const ids = new Set([
+      ...Object.keys(baseEstimate),
+      ...Object.keys(answers.amountOverrides),
+    ]);
+    return [...ids].sort(
+      (a, b) => (estimate[b] ?? answers.amountOverrides[b] ?? 0) - (estimate[a] ?? answers.amountOverrides[a] ?? 0),
+    );
+  }, [baseEstimate, answers.amountOverrides, estimate]);
   const symbol = CURRENCY_SYMBOL[settings.currency];
   const current = QUIZ_STEPS[step];
   const isLast = step === QUIZ_STEPS.length - 1;
 
+  const housingBlocked =
+    current === "housing" && answers.housing !== "owned" && answers.housingCost <= 0;
+  const incomeBlocked = isLast && num(income) <= 0;
+  const nextBlocked = housingBlocked || incomeBlocked;
+
   const finish = () => {
+    if (num(income) <= 0) return;
     setBaseline({
       createdAt: new Date().toISOString(),
       monthlyByCategory: estimate,
       answers,
     });
-    if (num(income) > 0) updateSettings({ monthlyIncome: num(income), onboarded: true });
+    updateSettings({ monthlyIncome: num(income), onboarded: true });
     toast(t("assess.applied"), { tone: "neon" });
     router.push("/");
   };
+
+  const stepAdjustIds = adjustableCategoryIds(current, answers);
 
   return (
     <div className="mx-auto max-w-xl space-y-4">
@@ -111,6 +188,9 @@ export default function AssessmentPage() {
                   value={answers.housingCost || ""}
                   onChange={(e) => set("housingCost", num(e.target.value))}
                 />
+                {housingBlocked ? (
+                  <p className="mt-2 text-[12px] text-warn">{t("assess.housingCostRequired")}</p>
+                ) : null}
               </div>
             ) : null}
           </Step>
@@ -226,16 +306,32 @@ export default function AssessmentPage() {
 
         {current === "subscriptions" ? (
           <Step title={t("assess.subsTitle")} sub={t("assess.subsSub")}>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {SUBSCRIPTION_OPTIONS.map((sub) => (
-                <MultiChip
-                  key={sub.id}
-                  active={answers.subscriptions.includes(sub.id)}
-                  onClick={() => toggle("subscriptions", sub.id)}
-                  label={t(`assess.sub${toPascal(sub.id)}`)}
-                  meta={money(sub.monthly)}
-                />
-              ))}
+            <div className="space-y-2">
+              {SUBSCRIPTION_OPTIONS.map((sub) => {
+                const active = answers.subscriptions.includes(sub.id);
+                const amount = answers.subscriptionAmounts[sub.id] ?? sub.monthly;
+                return (
+                  <div key={sub.id} className="space-y-2">
+                    <MultiChip
+                      active={active}
+                      onClick={() => toggle("subscriptions", sub.id)}
+                      label={t(`assess.sub${toPascal(sub.id)}`)}
+                      meta={money(amount)}
+                    />
+                    {active ? (
+                      <div className="pl-1">
+                        <Label htmlFor={`sub-${sub.id}`}>{t("assess.subCustomAmount")}</Label>
+                        <MoneyInput
+                          id={`sub-${sub.id}`}
+                          symbol={symbol}
+                          value={amount || ""}
+                          onChange={(e) => setSubAmount(sub.id, num(e.target.value))}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </Step>
         ) : null}
@@ -306,28 +402,58 @@ export default function AssessmentPage() {
                 value={income}
                 onChange={(e) => setIncome(e.target.value)}
               />
+              {incomeBlocked ? (
+                <p className="mt-2 text-[12px] text-warn">{t("assess.incomeRequired")}</p>
+              ) : null}
             </div>
 
-            <ul className="mt-4 max-h-56 space-y-1.5 overflow-y-auto pr-1">
-              {Object.entries(estimate)
-                .sort(([, a], [, b]) => b - a)
-                .map(([categoryId, amount]) => {
-                  const category = categories.find((c) => c.id === categoryId);
-                  return (
-                    <li
-                      key={categoryId}
-                      className="flex items-center justify-between gap-3 text-[13px]"
-                    >
+            <ul className="mt-4 max-h-72 space-y-2.5 overflow-y-auto pr-1">
+              {reviewRows.map((categoryId) => {
+                const category = categories.find((c) => c.id === categoryId);
+                const suggested = baseEstimate[categoryId];
+                const amount =
+                  answers.amountOverrides[categoryId] ?? estimate[categoryId] ?? 0;
+                return (
+                  <li key={categoryId} className="rounded-xl border border-border bg-surface-2 p-2.5">
+                    <div className="mb-1.5 flex items-center justify-between gap-2 text-[13px]">
                       <span className="flex min-w-0 items-center gap-2">
                         <span>{category?.emoji ?? "•"}</span>
-                        <span className="truncate">{categoryLabel(category, lang)}</span>
+                        <span className="truncate font-medium">
+                          {categoryLabel(category, lang)}
+                        </span>
                       </span>
-                      <span className="tabular shrink-0 font-medium">{money(amount)}</span>
-                    </li>
-                  );
-                })}
+                      {suggested != null && suggested !== amount ? (
+                        <span className="shrink-0 text-[11px] text-muted">
+                          {t("assess.suggested", { amount: money(suggested) })}
+                        </span>
+                      ) : null}
+                    </div>
+                    <MoneyInput
+                      symbol={symbol}
+                      value={amount || ""}
+                      onChange={(e) => setOverride(categoryId, num(e.target.value))}
+                      aria-label={categoryLabel(category, lang)}
+                    />
+                  </li>
+                );
+              })}
             </ul>
           </Step>
+        ) : null}
+
+        {stepAdjustIds.length > 0 ? (
+          <AmountAdjuster
+            categoryIds={stepAdjustIds}
+            baseEstimate={baseEstimate}
+            estimate={estimate}
+            overrides={answers.amountOverrides}
+            categories={categories}
+            lang={lang}
+            symbol={symbol}
+            money={money}
+            t={t}
+            onChange={setOverride}
+          />
         ) : null}
       </Card>
 
@@ -347,6 +473,7 @@ export default function AssessmentPage() {
           variant="neon"
           size="lg"
           className="flex-[2]"
+          disabled={nextBlocked}
           onClick={() => (isLast ? finish() : setStep((s) => s + 1))}
         >
           {isLast ? (
@@ -386,6 +513,67 @@ function Step({
   );
 }
 
+function AmountAdjuster({
+  categoryIds,
+  baseEstimate,
+  estimate,
+  overrides,
+  categories,
+  lang,
+  symbol,
+  money,
+  t,
+  onChange,
+}: {
+  categoryIds: string[];
+  baseEstimate: Record<string, number>;
+  estimate: Record<string, number>;
+  overrides: Record<string, number>;
+  categories: Category[];
+  lang: Language;
+  symbol: string;
+  money: (n: number) => string;
+  t: (key: string, vars?: Record<string, string | number>) => string;
+  onChange: (categoryId: string, amount: number) => void;
+}) {
+  return (
+    <div className="mt-5 border-t border-border pt-4">
+      <div className="mb-1 text-[13px] font-semibold">{t("assess.adjustMonthly")}</div>
+      <p className="mb-3 text-[12px] text-muted">{t("assess.adjustMonthlyHint")}</p>
+      <div className="space-y-3">
+        {categoryIds.map((categoryId) => {
+          const category = categories.find((c) => c.id === categoryId);
+          const amount = overrides[categoryId] ?? estimate[categoryId] ?? 0;
+          const suggested = baseEstimate[categoryId] ?? 0;
+          return (
+            <div key={categoryId}>
+              <div className="mb-1 flex items-baseline justify-between gap-2">
+                <Label htmlFor={`adj-${categoryId}`}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span>{category?.emoji ?? "•"}</span>
+                    {categoryLabel(category, lang)}
+                  </span>
+                </Label>
+                {suggested > 0 && suggested !== amount ? (
+                  <span className="text-[11px] text-muted">
+                    {t("assess.suggested", { amount: money(suggested) })}
+                  </span>
+                ) : null}
+              </div>
+              <MoneyInput
+                id={`adj-${categoryId}`}
+                symbol={symbol}
+                value={amount || ""}
+                onChange={(e) => onChange(categoryId, num(e.target.value))}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Choices({
   value,
   onChange,
@@ -404,6 +592,7 @@ function Choices({
         return (
           <button
             key={o.id}
+            type="button"
             onClick={() => onChange(o.id)}
             aria-pressed={active}
             className={cn(
@@ -436,10 +625,11 @@ function MultiChip({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "flex items-center justify-between gap-2 rounded-xl border px-3.5 py-3 text-[13px] font-medium transition-all active:scale-[0.98]",
+        "flex w-full items-center justify-between gap-2 rounded-xl border px-3.5 py-3 text-[13px] font-medium transition-all active:scale-[0.98]",
         active
           ? "border-neon bg-neon/10 text-neon"
           : "border-border bg-surface-2 hover:border-neon/50",
@@ -479,6 +669,7 @@ function IntensityPicker({
         {(["low", "mid", "high"] as Intensity[]).map((level) => (
           <button
             key={level}
+            type="button"
             onClick={() => onChange(level)}
             aria-pressed={value === level}
             className={cn(

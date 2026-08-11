@@ -75,6 +75,19 @@ export interface Expense {
   recurrence: "none" | "monthly";
 }
 
+/** Money that landed in the account — salary or anything else. */
+export type IncomeKind = "salary" | "other";
+
+export interface IncomeEntry {
+  id: string;
+  amount: number;
+  note?: string;
+  /** Local calendar day, `YYYY-MM-DD`. */
+  date: string;
+  createdAt: string;
+  kind: IncomeKind;
+}
+
 export interface Debt {
   id: string;
   name: string;
@@ -133,6 +146,8 @@ export interface AppState {
   settings: Settings;
   categories: Category[];
   expenses: Expense[];
+  /** Money-in log for the "Spend" world. Missing on older saves → treat as []. */
+  incomes: IncomeEntry[];
   debts: Debt[];
   goals: Goal[];
   /** Undefined until the user takes the lifestyle assessment. */
