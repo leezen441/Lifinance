@@ -18,6 +18,12 @@ import { buildSpendProfile, computeBudget } from "../budget-engine";
 import { DEFAULT_ANSWERS, estimateMonthly, estimateTotal } from "../assessment";
 import { buildMonthPlan } from "../month-plan";
 import { evalMoneyExpression } from "../money-expr";
+import {
+  accrueDebtToDate,
+  applyDebtPayment,
+  dailyInterest,
+  debtProgress,
+} from "../debt-interest";
 import { recommendBudget } from "../recommend";
 import { num } from "../utils";
 import type { Category, Debt, Expense, Goal, Settings } from "../types";
@@ -599,4 +605,35 @@ test("money expressions evaluate safely", () => {
   assert.equal(evalMoneyExpression("120+"), null);
   assert.equal(num("120+80"), 200);
   assert.equal(num("99.5"), 99.5);
+});
+
+test("daily interest accrues and payments raise progress until cleared", () => {
+  const start: Debt = {
+    id: "card",
+    name: "Visa",
+    kind: "credit_card",
+    balance: 10_000,
+    principal: 10_000,
+    apr: 36.5, // 0.1% per day exactly (36.5/365)
+    minPayment: 500,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    lastInterestDate: "2026-01-01",
+    paidTotal: 0,
+    interestAccrued: 0,
+  };
+  assert.ok(Math.abs(dailyInterest(10_000, 36.5, 1) - 10) < 0.01);
+
+  const afterOneDay = accrueDebtToDate(start, "2026-01-02");
+  assert.ok(afterOneDay.balance > 10_000);
+  assert.equal(afterOneDay.lastInterestDate, "2026-01-02");
+
+  const paid = applyDebtPayment(afterOneDay, 5_000, "2026-01-02");
+  assert.equal(paid.cleared, false);
+  assert.ok(debtProgress(paid.debt) > 0.4);
+
+  const done = applyDebtPayment(paid.debt, paid.debt.balance, "2026-01-02");
+  assert.equal(done.cleared, true);
+  assert.equal(done.debt.balance, 0);
+  assert.ok(done.debt.archivedAt);
+  assert.equal(debtProgress(done.debt), 1);
 });

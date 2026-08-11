@@ -2,125 +2,228 @@
 
 **Clear the debt. Keep the life.** · **ปิดหนี้ให้ไว แต่ยังใช้ชีวิตได้**
 
-A personal finance app that plans the fastest realistic route out of debt — where
-*realistic* means the plan is built from what you actually spend, not from what a
-spreadsheet wishes you spent.
-
-Thai / English, switchable anywhere in the app. Neon green on near-black, with a
-light mode. Mobile-first, scaling to iPad and desktop.
+A personal finance PWA that plans a realistic route out of debt — built from what
+you actually earn and spend, not from a spreadsheet fantasy. Designed for people
+with little financial background: three clear worlds (**Spend · Save · Debt**),
+plain language (TH/EN), and numbers that move when you log money.
 
 ```bash
 npm install
 npm run dev          # http://localhost:3000
 ```
 
-Open Settings → **Load demo data** for a populated example (a Bangkok office
-worker, ฿58k take-home, three debts, 60 days of spending).
+Open **Settings → Load demo data** for a populated Bangkok example (฿58k
+take-home, three debts, goals, and ~60 days of spending).
+
+Deploy as a static/SSR Next.js app (e.g. Vercel). All user data stays on-device in
+`localStorage` until you add a backend.
 
 ---
 
-## The idea
+## Product at a glance
 
-Most payoff calculators ask for your income and your debts and then tell you to
-throw ฿20,000 a month at your credit card. You do it for six weeks, miss a coffee
-too many, fall off, and never open the app again.
+| Tab | Route | Job |
+| --- | --- | --- |
+| **Home** | `/` | This month: left to spend · savings balance · debt to pay |
+| **Spend** | `/money` | Money in, money out, envelopes, left-to-spend |
+| **Save** | `/goals` | Total already saved + goals with % progress |
+| **Debt** | `/debts` | Pay order #1/#2…, % paid, daily interest, close pots |
+| **Settings** | `/settings` | Language, theme, income, export/import, install PWA |
 
-Lifinance inverts that. It measures what you actually spend, protects the part of
-your life you said you wanted to keep, and only *then* reports what is genuinely
-spare:
+Also: **`/assessment`** — lifestyle quiz that seeds a spending baseline (every
+amount is editable, including `0`).
+
+Legacy `/expenses` redirects to `/money`.
+
+---
+
+## Three money worlds
+
+```mermaid
+flowchart LR
+  Home["Home: this month"] --> Spend["Spend /money"]
+  Home --> Save["Save /goals"]
+  Home --> Debt["Debt /debts"]
+  Spend --> In["Log money in"]
+  Spend --> Out["Log money out"]
+  Out --> Day["Day-to-day"]
+  Out --> Pay["Pay a debt pot"]
+  Pay --> Debt
+  Save --> Goals["Goal pots + %"]
+```
+
+### Spend (`/money`)
+
+- **Money in** — salary / other, logged by date.
+- **Money out** — day-to-day spend *or* **pay debt** (pick which pot).
+- **Left to spend** — from income after selected envelopes, or optionally  
+  **spend pot − money out** only (“หักรายจ่ายจากกองใช้เท่านั้น”).
+- **Envelopes you can toggle**
+  - **Spend pot** — amount of income set aside for day-to-day (editable; suggested = income − save plan − debt plan).
+  - **Save pot** — sum of goals’ *monthly* contributions (planning reserve).
+  - **Debt pot** — mins + extra for this month (shrinks as you log debt payments).
+- Money fields support simple math: `120+80`, live result on the keypad.
+
+Debt payments create an expense linked to a `debtId`, reduce that debt’s balance,
+raise its %, and **do not** double-count against day-to-day left-to-spend.
+
+### Save (`/goals`)
+
+- Hero number = **money already in goals** (`saved` total), not a system guess.
+- Each goal: progress bar, milestones, quick `+` amounts, monthly contribution.
+- Emergency-fund flag is respected by the budget engine.
+
+### Debt (`/debts`)
+
+- Ordered pay list (#1 focus gets the extra).
+- Per pot: balance, **% paid** (like Save), min + extra this month, **daily interest**.
+- **Pay this** → opens Spend with that pot pre-selected.
+- When balance hits zero → **closed** section (success state).
+- Strategy: Avalanche / Snowball / Auto (tucked under “why this order”).
+
+### Home
+
+One card: three envelopes for the month + shortcuts to log in/out and open Save/Debt.
+Freedom card shows projected debt-free date when debts exist.
+
+---
+
+## Assessment (`/assessment`)
+
+Lifestyle check-up that builds `baseline.monthlyByCategory`.
+
+- Every money field is editable mid-quiz and on the review screen.
+- **Required fields must be filled** — typing **`0` is allowed** (empty is not).
+- Housing cost, bills, subscriptions (custom amounts), transport/food intensities, etc.
+- Includes **family support** as an essential category.
+- Applying the quiz sets monthly income + baseline used by the budget engine
+  (blended with real expenses as data accumulates).
+
+---
+
+## Debt math
+
+### Payoff simulation (`src/lib/debt-engine.ts`)
+
+`simulatePayoff(debts, extraPerMonth, strategy)` steps month by month:
+
+1. Monthly interest on each balance (`balance × apr / 12`).
+2. Every debt gets its minimum (capped at payoff).
+3. All remaining cash (extra + freed minimums) hits one focus debt, then cascades.
+
+| Strategy | Target |
+| --- | --- |
+| **Avalanche** | Highest APR first (lowest total interest) |
+| **Snowball** | Smallest balance first (fastest first win) |
+| **Auto** | Simulates both; prefers earlier freedom, then lower cost |
+
+Infeasible plans surface `feasible: false` + `shortfall` instead of looping forever.
+
+### Daily interest on live balances (`src/lib/debt-interest.ts`)
+
+Tracked debts accrue **simple daily interest** while open:
+
+```
+daily = balance × (APR / 100) / 365
+```
+
+Accrual is idempotent per calendar day (`lastInterestDate`). Payments via Spend
+update `paidTotal`, reduce `balance`, and archive the debt when cleared.
+
+Progress:
+
+```
+% paid ≈ paidTotal / (paidTotal + balance)
+```
+
+---
+
+## Budget & month plan
+
+**Budget engine** (`budget-engine.ts` + `recommend.ts`) answers *what can this
+person sustain*:
 
 ```
 available extra = income
-                − essentials            (measured, never squeezed)
-                − lifestyle × keepRatio (the hobbies you're keeping)
-                − goal contributions    (emergency fund first)
-                − safety buffer         (% of income, for the unexpected)
+                − essentials
+                − lifestyle × keepRatio
+                − goal monthly contributions
+                − safety buffer (% of income)
                 − minimum payments
 ```
 
-That number feeds the payoff simulation. Log a ฿120 coffee and the payoff date
-moves — visibly, immediately. The dial the user controls is `keepRatio`: *how
-much of the fun am I willing to trade?* — and the dashboard shows the months
-gained or lost as they drag it.
+**Month plan** (`month-plan.ts`) is the single story for Home / Spend / Save / Debt:
+
+| Field | Meaning |
+| --- | --- |
+| `moneyIn` | Logged income this month, else settings `monthlyIncome` |
+| `moneyOut` | Day-to-day expenses (excludes debt payments) |
+| `savedTotal` | Sum of goal `saved` |
+| `saveThisMonth` | Sum of goal `monthlyContribution` (envelope) |
+| `payDebtsThisMonth` | Mins + extra |
+| `debtPaidThisMonth` | Logged debt payments |
+| `spendSuggested` | Income − save plan − debt plan |
+| `leftToSpend` | Envelope formula or spend-pot-only mode |
 
 ---
 
-## Install it as a phone app
+## Install as a phone app (PWA)
 
-Lifinance is a **PWA**, so it installs to the home screen from the browser — no
-app store, no build step, no native wrapper. Once installed it runs full screen
-with its own icon and works with no signal.
+No store required. Install from the browser:
 
-- **Android / Chrome** — an Install banner appears on the dashboard; or menu → *Install app*.
-- **iPhone / iPad (Safari)** — Share → *Add to Home Screen*. Apple provides no
-  programmatic install, so the app shows those two steps instead of a button.
-- Either way there is also a permanent **Settings → Install as an app** section.
-
-What installing changes:
+- **Android / Chrome** — Install banner on Home, or menu → *Install app*.
+- **iPhone / iPad (Safari)** — Share → *Add to Home Screen*.
+- **Settings → Install as an app** always available.
 
 | | Browser tab | Installed |
 | --- | --- | --- |
-| Chrome/Safari UI | visible | gone — full screen |
-| Launch | type the URL | home-screen icon |
-| Offline | needs the network | opens and works |
-| Icon long-press | — | shortcuts to *Log a spend* / *Debts* |
+| Chrome/Safari chrome | visible | gone — full screen |
+| Launch | URL | home-screen icon |
+| Offline | needs network | opens via service worker |
+| Long-press icon | — | shortcuts (e.g. log spend / debts) |
 
-Offline behaviour is handled by [`public/sw.js`](public/sw.js): navigations are
-**network-first** (so a new deploy is never stuck behind a stale cache),
-`/_next/static/*` is cache-first (those filenames are fingerprinted and
-immutable), and `/` is precached so the app opens on the first launch after
-install. A route you've never visited, opened offline, gets a branded bilingual
-offline page rather than a browser error.
+Service worker: [`public/sw.js`](public/sw.js)
 
-Three things in that file are load-bearing and easy to get wrong:
+- Navigations **network-first** (fresh deploys win).
+- `/_next/static/*` **cache-first** (fingerprinted).
+- `/` precached; unknown offline routes get a bilingual offline page.
+- Load-bearing details: `ignoreVary: true`, sync `response.clone()`, never
+  `respondWith(undefined)`.
 
-- **`ignoreVary: true` on every cache lookup.** Next's App Router sends
-  `Vary: rsc, next-router-state-tree, …`; the Cache API honours `Vary`, so
-  without this every offline lookup misses and the user gets the offline page
-  instead of the app they already have cached.
-- **`response.clone()` must happen synchronously.** Cloning inside
-  `caches.open().then()` runs after the body has started streaming to the page,
-  so it throws and the cache write is silently lost.
-- **Never resolve a handler to `undefined`** — `respondWith(undefined)` reaches
-  the page as a thrown `TypeError`, which is much harder to diagnose than a 503.
+Icons from [`scripts/generate-icons.mjs`](scripts/generate-icons.mjs)
+(`npm run icons`) — `any` + `maskable` variants committed to the repo.
 
-Icons are generated from a single SVG source by
-[`scripts/generate-icons.mjs`](scripts/generate-icons.mjs) (`npm run icons`).
-The outputs are committed, so a normal build needs neither the script nor
-`sharp`. Two variants exist because the platforms mask differently: `any` draws
-its own squircle, `maskable` is full-bleed with the mark inside the 80% safe
-zone so Android can crop it to a circle or teardrop without clipping.
+> SW registers in **production only**. To test offline:  
+> `npm run build && npm start`.
+
+---
 
 ## Tech stack
 
-| Layer | Choice | Why |
-| --- | --- | --- |
-| Framework | **Next.js 15** (App Router, React 19) | Static-exportable, instant route transitions, one deploy target |
-| Language | **TypeScript** (strict) | The money math is the product; types are the first test |
-| Styling | **Tailwind CSS v4** | Token-driven theming via `@theme`; dark/light from CSS vars only |
-| Components | Hand-rolled, **shadcn-compatible** | Same `cn()` + variant conventions, no CLI or Radix weight for this surface |
-| Icons | **lucide-react** | Consistent 1.5–2.5px stroke set |
-| State | React Context + `localStorage` | Offline-first; no financial data leaves the device |
-| Persistence (server) | **Prisma + Postgres** schema included | Models mirror the client types 1:1 — syncing is an insert, not a mapping layer |
-| Tests | `node --test` | Zero test-framework dependency |
+| Layer | Choice |
+| --- | --- |
+| Framework | **Next.js 15** App Router, React 19 |
+| Language | **TypeScript** (strict) |
+| Styling | **Tailwind CSS v4** + CSS variables (dark / light) |
+| UI | Hand-rolled, shadcn-compatible (`cn`, variants) |
+| Icons | lucide-react |
+| State | React Context + **`localStorage`** (offline-first) |
+| Server schema | Prisma + Postgres models included (optional future sync) |
+| Tests | `node --test` (no Jest/Vitest dependency) |
 
-**Deliberately not used:** a charting library (four small SVGs beat 40 kB),
-`next-intl` (a typed dictionary and a context is the whole requirement here), and
-a state library (one store, no cross-tree writes).
+**Not used on purpose:** chart libraries, `next-intl`, Redux/Zustand.
 
 ### Commands
 
 ```bash
-npm run dev          # dev server
+npm install
+npm run dev          # http://localhost:3000
 npm run build        # production build
+npm run start        # serve production build
 npm run typecheck    # tsc --noEmit
-npm run test:engine  # 20 tests over the debt + budget engines
-npm run icons        # regenerate app icons from the SVG source
+npm run test:engine  # debt + budget + month-plan + interest tests
+npm run icons        # regenerate PWA icons from SVG
 ```
-
-> The service worker registers in **production only**. In dev it would sit in
-> front of Next's HMR endpoints and serve stale chunks, which looks exactly
-> like a broken build. To test offline behaviour, use `npm run build && npm start`.
 
 ---
 
@@ -128,134 +231,86 @@ npm run icons        # regenerate app icons from the SVG source
 
 ```
 src/
+├─ app/
+│  ├─ page.tsx              Home
+│  ├─ money/                Spend world
+│  ├─ goals/                Save world
+│  ├─ debts/                Debt world
+│  ├─ assessment/           Lifestyle quiz
+│  ├─ settings/
+│  └─ expenses/             → redirects to /money
 ├─ lib/
-│  ├─ debt-engine.ts     ← avalanche / snowball / auto simulation
-│  ├─ budget-engine.ts   ← spend profile + realistic payment capacity
-│  ├─ types.ts           ← shared shapes (mirror of the Prisma models)
-│  ├─ date.ts            ← local-calendar-day helpers (never UTC)
-│  ├─ format.ts          ← locale + currency formatting
-│  └─ seed.ts            ← default categories + demo data
+│  ├─ debt-engine.ts        Monthly avalanche / snowball / auto
+│  ├─ debt-interest.ts      Daily interest + pay / clear / reverse
+│  ├─ budget-engine.ts      Spend profile + capacity
+│  ├─ recommend.ts          Assessment-style budget split
+│  ├─ month-plan.ts         Unified this-month numbers
+│  ├─ assessment.ts         Quiz answers → monthly estimate
+│  ├─ money-expr.ts         Safe money expressions (120+80)
+│  ├─ types.ts              Shared shapes (≈ Prisma)
+│  ├─ date.ts               Local calendar days (never UTC)
+│  ├─ format.ts             Locale + currency
+│  └─ seed.ts               Categories, defaults, demo data
 ├─ i18n/
-│  ├─ dictionaries.ts    ← full TH/EN dictionary, key-complete by type
-│  └─ I18nProvider.tsx   ← t() + money() + date helpers bound to the language
-├─ store/FinanceProvider.tsx  ← single source of truth, all derived values memoised
-├─ components/
-│  ├─ ui/                ← Card, Button, Progress/Ring/MilestoneBar, Field, Sheet, Toast
-│  ├─ dashboard/         ← the eight dashboard cards
-│  ├─ debts/ expenses/   ← entry sheets
-│  └─ AppShell.tsx       ← sidebar ≥lg, top bar + bottom tabs <lg
-└─ app/                  ← /, /debts, /expenses, /goals, /settings
-prisma/schema.prisma     ← server-side schema
+│  ├─ dictionaries.ts       Full TH/EN (typed key-complete)
+│  └─ I18nProvider.tsx
+├─ store/FinanceProvider.tsx  Single store; all derived values memoised
+└─ components/
+   ├─ ui/                   Card, Button, Field, Sheet, Toast, Progress…
+   ├─ dashboard/            Home cards
+   ├─ debts/ expenses/ money/
+   └─ AppShell.tsx          Sidebar ≥lg · top + bottom tabs <lg
+
+public/sw.js                Service worker
+prisma/schema.prisma        Optional server schema
 ```
 
-Every derived number — spend profile, budget, payoff plan, strategy comparison —
-is computed once in `FinanceProvider` and memoised. A 200-month simulation runs
-on data change, not on render.
+Derived values (profile, budget, recommendation, payoff plan, month plan) are
+computed once in `FinanceProvider` on data change — not per render.
 
 ---
 
-## The debt engine
+## Data (client)
 
-`simulatePayoff(debts, extraPerMonth, strategy)` steps month by month:
+Persisted key: `lifinance.state.v1` in `localStorage`.
 
-1. **Interest accrues** on each balance (`balance × apr / 12`) — you are charged
-   before you pay.
-2. **Every debt gets its minimum**, capped at its payoff amount.
-3. **Everything left over** — the extra *plus* the minimums freed by
-   already-cleared debts — goes to one target, cascading to the next debt the
-   moment the target hits zero, within the same month.
+| Entity | Highlights |
+| --- | --- |
+| **Settings** | language, theme, currency, income, payday, strategy, keep ratio, buffer %, spend window, spend pot, envelope toggles, `spendAgainstPotOnly` |
+| **IncomeEntry[]** | amount, date, kind (`salary` \| `other`) |
+| **Expense[]** | amount, date, categoryId, note, recurrence; optional **`debtId`** for debt payments |
+| **Debt[]** | balance, principal, apr, minPayment, dueDay, `paidTotal`, `interestAccrued`, `lastInterestDate`, `archivedAt` |
+| **Goal[]** | target, saved, monthlyContribution, isEmergencyFund |
+| **Category[]** | key, group, emoji, isEssential, quickAmounts |
+| **Baseline?** | from assessment |
 
-Step 3 is the snowball *effect*, and it applies to both strategies. The only
-difference between them is which debt is the target:
+**Export / Import JSON** in Settings is the backup story (no cloud sync yet).
 
-- **Avalanche** (`Cheapest`) — highest APR first. Provably the lowest total interest.
-- **Snowball** (`Quickest wins`) — smallest balance first. Worse on paper, better
-  on adherence, because the first debt disappearing is what keeps people going.
-- **Auto** (`Smart pick`) — simulates both, prefers whichever *clears sooner*,
-  breaking ties on cost.
-
-Guards that matter:
-
-- A payment that cannot cover the monthly interest is reported as
-  `feasible: false` with a `shortfall`, up front — not discovered after looping
-  for 60 simulated years.
-- `extraNeededForTarget()` binary-searches the inverse question: *"debt-free in
-  18 months — what does that cost per month?"*
-
-### Why the budget engine is separate
-
-The debt engine answers *how fast can this go*. The budget engine answers *what
-can this person actually sustain*. Keeping them apart means the aggressive math
-stays aggressive and the realism lives in one auditable place.
-
-Two details that are easy to get wrong and are handled explicitly:
-
-- **Recurring items count once per month.** Log rent twice inside a 60-day window
-  and a naïve average doubles your rent.
-- **Fixed bills are excluded from the pace check.** Comparing today's variable
-  spending against a target that includes rent reads "on pace" every single day.
-
----
-
-## Data model
-
-Full schema in [`prisma/schema.prisma`](prisma/schema.prisma); the client types in
-[`src/lib/types.ts`](src/lib/types.ts) mirror it exactly.
-
-```
-User ─┬─ UserSettings   language, theme, currency, monthlyIncome, payday,
-      │                  strategy, lifestyleKeepRatio, safetyBufferPct,
-      │                  spendWindowDays
-      ├─ Debt[]         balance, principal, apr, minPayment, dueDay, archivedAt
-      │    └─ Payment[] amount, paidOn, isExtra   ← reality, vs. the projection
-      ├─ Category[]     key, group, emoji, isEssential, quickAmounts[]
-      │    └─ Expense[] amount, date (@db.Date), recurrence, note
-      └─ Goal[]         target, saved, deadline, monthlyContribution,
-                        isEmergencyFund
-```
-
-Three decisions worth knowing about:
-
-- **Money is `Decimal(14,2)`, never `Float`.** Binary floating point loses cents,
-  and a debt tracker that loses cents is a debt tracker nobody trusts. The
-  client uses `number` for the offline store; if you put real money through this,
-  move to integer minor units at the same time you add the API.
-- **`Expense.date` is a `Date`, not a timestamp.** An 11pm coffee in Bangkok
-  belongs to that day, not to tomorrow in UTC.
-- **Categories archive, they don't delete.** Deleting one would silently change
-  every historical total that referenced it.
-
-### Default categories
-
-Opinionated on purpose — a tracker whose categories don't match your life is a
-tracker you stop opening. Essentials are marked ✓ (never squeezed by the plan):
+### Default categories (essentials marked ✓)
 
 | Group | Categories |
 | --- | --- |
-| Essential living | Rent ✓, Utilities ✓, Groceries ✓, Phone & internet ✓, Insurance ✓ |
-| Tech & subscriptions | AI tools, Cloud storage, Streaming, Apps & software |
-| Food & beverage | Specialty coffee, Matcha, Eating out, Delivery, Snacks |
-| Pet care | Cat food ✓, Pet supplies, Vet ✓ |
-| Sports & hobbies | Badminton, Gym, DIY projects, Gear |
-| Getting around | Fuel ✓, Transit ✓, Taxi / ride-hailing |
-| Health & misc | Health ✓, Beauty, Gifts, Misc |
+| Essential | Rent ✓, Utilities ✓, Groceries ✓, Phone ✓, Insurance ✓, Family support ✓, **Debt payment** ✓ |
+| Tech | AI tools, Cloud, Streaming, Software |
+| Food | Coffee, Matcha, Eating out, Delivery, Snacks |
+| Pet | Cat food ✓, Pet supplies, Vet ✓ |
+| Hobby | Badminton, Gym, DIY, Gear |
+| Transport | Fuel ✓, Transit ✓, Ride-hailing |
+| Health & other | Health ✓, Beauty, Gifts, Misc |
+
+Money on the client is `number` (fine for offline UX). For a real multi-user API,
+prefer integer minor units + `Decimal` as noted in the Prisma schema.
 
 ---
 
-## Language support (TH / EN)
+## Language (TH / EN)
 
-- Toggle sits in the header on **every** screen, plus Settings — language is not
-  a setting you should have to hunt for.
-- `en` is the source of truth. `th` is typed as `DeepStringMap<typeof en>`, so a
-  **missing Thai key is a compile error**, not a runtime blank.
-- Dates and money go through `Intl` per language. Thai is pinned to
-  `th-TH-u-ca-gregory` — the default Thai calendar would show 2569 next to an
-  English 2026, which is confusing mid-plan.
-- Phrases are templated whole (`"{time} to go"` / `"เหลืออีก {time}"`) rather
-  than concatenated in JSX, because Thai puts the "remaining" word *before* the
-  duration.
-- Thai gets a slightly taller line-height so tone marks stay readable, and the
-  font stack includes Noto Sans Thai / Leelawadee UI.
+- Toggle in the header on every screen + Settings.
+- `en` is source of truth; `th` is typed as a deep map of `en` — **missing Thai
+  keys fail `tsc`**.
+- Dates/money via `Intl`; Thai calendar pinned to Gregorian
+  (`th-TH-u-ca-gregory`).
+- Whole-phrase templates (`"{amount}"`) so Thai word order stays correct.
 
 ---
 
@@ -267,48 +322,37 @@ tracker you stop opening. Essentials are marked ✓ (never squeezed by the plan)
 | `--bg` | `#070A07` | `#F6F7F5` |
 | `--surface` | `#101510` | `#FFFFFF` |
 
-Pure `#39FF14` on white fails contrast badly, so light mode swaps in a darker
-green — same role, same token name, so no component knows the difference.
+- Neon as spotlight (one hero number per card).
+- Tabular nums on money.
+- Progress animates (~700ms); respects `prefers-reduced-motion`.
+- Plain copy: “Debt-free on”, not “amortisation term”.
 
-Rules the UI follows:
-
-- **Neon is a spotlight, not a paint.** One neon element per card, on the number
-  that matters. The glow (`box-shadow`) is dark-mode only.
-- **Numbers are tabular.** `font-variant-numeric: tabular-nums` everywhere money
-  appears, so digits don't jitter as values change.
-- **Progress moves.** Bars animate their width over 700ms — that motion *is* the
-  reward loop.
-- **No jargon.** "Debt-free on", not "amortisation term". "Must-pay living", not
-  "fixed obligations".
-- `prefers-reduced-motion` disables all of it.
-
-### Responsive layout
-
-| Breakpoint | Navigation | Dashboard |
-| --- | --- | --- |
-| base (375px+) | top bar + bottom tab bar | single column |
-| `sm` (640px+) | same | same, roomier cards |
-| `lg` (1024px+) | left sidebar | two columns — "what do I do" ‖ "how am I doing" |
-
-Bottom tabs sit in thumb reach and respect `env(safe-area-inset-bottom)`. The
-category row scrolls horizontally on phones and wraps into a grid from `sm`.
-Verified with no horizontal page overflow at 360, 375, 768, 1280 and 1440px.
+| Breakpoint | Nav |
+| --- | --- |
+| &lt; `lg` | Top bar + bottom tabs (safe-area aware) |
+| ≥ `lg` | Left sidebar |
 
 ---
 
 ## What is deliberately not here
 
-- **No accounts, no server, no analytics.** Everything is in `localStorage`; the
-  export/import buttons in Settings are the whole sync story for now.
-- **No bank connection.** Manual entry is the point — the two-tap log *is* the
-  habit the plan depends on.
-- **No investment advice.** The app plans payoffs and savings; it does not
-  recommend products, and says so in Settings → About.
+- No accounts, no analytics, no bank sync — data stays on the device.
+- No investment product recommendations (stated in Settings → About).
+- No forced cloud database (Prisma schema is ready when you need multi-device).
 
-## Next steps if this goes further
+---
 
-1. Wire the Prisma schema to a real API and move money to integer minor units.
-2. Record actual `Payment` rows and show projection-vs-reality drift — the most
-   useful signal in the app, and the schema already supports it.
-3. Push notifications on `dueDay` (the field exists and is unused).
-4. PWA manifest + service worker; the app is already offline-capable in practice.
+## Roadmap (if you take it further)
+
+1. Wire Prisma / Postgres (or Supabase) + auth; migrate money to integer minor units.
+2. Sync / restore across devices; keep export/import as backup.
+3. Push reminders on `dueDay`.
+4. Projection vs reality for debt payments (schema already sketches `Payment`).
+5. Optional Play Store listing via TWA / PWABuilder (app is already a PWA).
+
+---
+
+## License / status
+
+Personal / prototype-friendly codebase. Review privacy copy before a public
+launch — today all financial data remains in the user’s browser storage.

@@ -43,6 +43,12 @@ import { recommendBudget } from "@/lib/recommend";
 import { buildMonthPlan } from "@/lib/month-plan";
 import { todayISO } from "@/lib/date";
 import { uid } from "@/lib/utils";
+import {
+  accrueAllDebts,
+  applyDebtPayment,
+  DEBT_PAYMENT_CATEGORY_ID,
+  reverseDebtPayment,
+} from "@/lib/debt-interest";
 
 interface Derived {
   profile: SpendProfile;
@@ -78,6 +84,16 @@ interface FinanceValue extends Derived {
   addExpense: (input: Omit<Expense, "id" | "createdAt"> & { date?: string }) => Expense;
   updateExpense: (id: string, patch: Partial<Expense>) => void;
   removeExpense: (id: string) => void;
+  /**
+   * Log a payment toward a debt: accrues daily interest, reduces balance,
+   * archives when cleared, and creates a money-out row.
+   */
+  payDebt: (input: {
+    debtId: string;
+    amount: number;
+    date?: string;
+    note?: string;
+  }) => { expense: Expense; cleared: boolean; debt: Debt };
 
   addIncome: (input: Omit<IncomeEntry, "id" | "createdAt"> & { date?: string }) => IncomeEntry;
   updateIncome: (id: string, patch: Partial<IncomeEntry>) => void;
@@ -170,6 +186,16 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
   const patch = useCallback((fn: (prev: AppState) => AppState) => setState(fn), []);
 
+  useEffect(() => {
+    if (!hydrated) return;
+    const today = todayISO();
+    patch((s) => {
+      const debts = accrueAllDebts(s.debts, today);
+      if (debts === s.debts) return s;
+      return { ...s, debts };
+    });
+  }, [hydrated, patch]);
+
   const updateSettings = useCallback(
     (p: Partial<Settings>) =>
       patch((s) => ({ ...s, settings: { ...s.settings, ...p } })),
@@ -189,6 +215,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         categoryId: input.categoryId,
         amount: input.amount,
         note: input.note,
+        debtId: input.debtId,
       };
       patch((s) => ({ ...s, expenses: [expense, ...s.expenses] }));
       return expense;
@@ -206,7 +233,85 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   );
 
   const removeExpense = useCallback<FinanceValue["removeExpense"]>(
-    (id) => patch((s) => ({ ...s, expenses: s.expenses.filter((e) => e.id !== id) })),
+    (id) =>
+      patch((s) => {
+        const expense = s.expenses.find((e) => e.id === id);
+        const debts =
+          expense?.debtId
+            ? s.debts.map((d) =>
+                d.id === expense.debtId ? reverseDebtPayment(d, expense.amount) : d,
+              )
+            : s.debts;
+        return {
+          ...s,
+          debts,
+          expenses: s.expenses.filter((e) => e.id !== id),
+        };
+      }),
+    [patch],
+  );
+
+  const payDebt = useCallback<FinanceValue["payDebt"]>(
+    (input) => {
+      const date = input.date ?? todayISO();
+      let result: { expense: Expense; cleared: boolean; debt: Debt } | null = null;
+
+      patch((s) => {
+        const accrued = accrueAllDebts(s.debts, date);
+        const current = accrued.find((d) => d.id === input.debtId);
+        if (!current || current.archivedAt) {
+          return accrued === s.debts ? s : { ...s, debts: accrued };
+        }
+
+        const { debt, applied, cleared } = applyDebtPayment(current, input.amount, date);
+        if (applied <= 0) {
+          return accrued === s.debts ? s : { ...s, debts: accrued };
+        }
+
+        const expense: Expense = {
+          id: uid("exp"),
+          createdAt: new Date().toISOString(),
+          date,
+          recurrence: "none",
+          categoryId: DEBT_PAYMENT_CATEGORY_ID,
+          amount: applied,
+          note: input.note,
+          debtId: debt.id,
+        };
+        result = { expense, cleared, debt };
+        return {
+          ...s,
+          debts: accrued.map((d) => (d.id === debt.id ? debt : d)),
+          expenses: [expense, ...s.expenses],
+        };
+      });
+
+      if (!result) {
+        return {
+          expense: {
+            id: "",
+            categoryId: DEBT_PAYMENT_CATEGORY_ID,
+            amount: 0,
+            date,
+            createdAt: new Date().toISOString(),
+            recurrence: "none" as const,
+            debtId: input.debtId,
+          },
+          cleared: false,
+          debt: {
+            id: input.debtId,
+            name: "",
+            kind: "other" as const,
+            balance: 0,
+            principal: 0,
+            apr: 0,
+            minPayment: 0,
+            createdAt: new Date().toISOString(),
+          },
+        };
+      }
+      return result;
+    },
     [patch],
   );
 
@@ -273,7 +378,14 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
   const addDebt = useCallback<FinanceValue["addDebt"]>(
     (input) => {
-      const debt: Debt = { ...input, id: uid("debt"), createdAt: new Date().toISOString() };
+      const debt: Debt = {
+        ...input,
+        id: uid("debt"),
+        createdAt: new Date().toISOString(),
+        paidTotal: input.paidTotal ?? 0,
+        interestAccrued: input.interestAccrued ?? 0,
+        lastInterestDate: input.lastInterestDate ?? todayISO(),
+      };
       patch((s) => ({ ...s, debts: [...s.debts, debt] }));
       return debt;
     },
@@ -443,6 +555,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       addExpense,
       updateExpense,
       removeExpense,
+      payDebt,
       addIncome,
       updateIncome,
       removeIncome,
@@ -465,7 +578,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       hydrated, state, settings, categories, expenses, incomes, debts, goals,
       setBaseline, profile, budget, recommendation, plan, comparison,
       minimumsPlan, monthsSaved, interestSaved, monthPlan,
-      updateSettings, setLanguage, setTheme, addExpense, updateExpense, removeExpense,
+      updateSettings, setLanguage, setTheme, addExpense, updateExpense, removeExpense, payDebt,
       addIncome, updateIncome, removeIncome,
       addCategory, updateCategory, removeCategory, addDebt, updateDebt, removeDebt,
       addGoal, updateGoal, removeGoal, contributeToGoal, loadDemo, resetAll,

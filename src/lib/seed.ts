@@ -22,6 +22,7 @@ export const DEFAULT_CATEGORIES: Omit<Category, "id">[] = [
   { key: "phone", group: "essential", emoji: "📶", isEssential: true, quickAmounts: [], isCustom: false },
   { key: "insurance", group: "essential", emoji: "🛡️", isEssential: true, quickAmounts: [], isCustom: false },
   { key: "family_support", group: "essential", emoji: "👨‍👩‍👧", isEssential: true, quickAmounts: [], isCustom: false },
+  { key: "debt_payment", group: "essential", emoji: "💳", isEssential: true, quickAmounts: [500, 1000, 2000, 5000], isCustom: false },
 
   // --- Tech & subscriptions --------------------------------------------
   { key: "ai_tools", group: "tech", emoji: "🤖", isEssential: false, quickAmounts: [700, 800], isCustom: false },

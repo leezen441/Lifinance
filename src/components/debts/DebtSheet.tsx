@@ -7,6 +7,7 @@ import { Input, Label, MoneyInput, Select } from "@/components/ui/Field";
 import { useFinance } from "@/store/FinanceProvider";
 import { useI18n } from "@/i18n/I18nProvider";
 import { CURRENCY_SYMBOL } from "@/lib/format";
+import { todayISO } from "@/lib/date";
 import { num } from "@/lib/utils";
 import type { Debt, DebtKind } from "@/lib/types";
 
@@ -63,19 +64,25 @@ export function DebtSheet({
 
   const balanceValue = num(balance);
   const aprValue = num(apr);
-  const valid = name.trim().length > 0 && balanceValue > 0;
+  const valid = name.trim().length > 0 && (editing ? balanceValue >= 0 : balanceValue > 0);
 
   const submit = () => {
     if (!valid) return;
+    const cleared = balanceValue <= 0;
     const payload = {
       name: name.trim(),
       kind,
-      balance: balanceValue,
-      principal: num(principal) > 0 ? num(principal) : balanceValue,
+      balance: cleared ? 0 : balanceValue,
+      principal: num(principal) > 0 ? num(principal) : Math.max(balanceValue, editing?.principal ?? 0),
       apr: aprValue,
       minPayment:
-        num(minPayment) > 0 ? num(minPayment) : suggestMinimum(balanceValue, aprValue, kind),
+        num(minPayment) > 0
+          ? num(minPayment)
+          : cleared
+            ? 0
+            : suggestMinimum(balanceValue, aprValue, kind),
       dueDay: num(dueDay) > 0 ? Math.min(31, num(dueDay)) : undefined,
+      archivedAt: cleared ? editing?.archivedAt ?? todayISO() : undefined,
     };
     if (editing) updateDebt(editing.id, payload);
     else addDebt(payload);

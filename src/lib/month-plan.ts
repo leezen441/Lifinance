@@ -61,6 +61,8 @@ export interface MonthPlan {
   saveSuggested: number;
   /** How much to send to debts this month (mins + spare). */
   payDebtsThisMonth: number;
+  /** Debt payments already logged this month (Spend → pay debt). */
+  debtPaidThisMonth: number;
   /** Minimums only. */
   debtMinimums: number;
   /** Extra on top of mins for the focus debt. */
@@ -118,8 +120,14 @@ export function buildMonthPlan(input: {
   const moneyInEstimated = loggedIn <= 0;
   const moneyIn = moneyInEstimated ? Math.max(0, input.settings.monthlyIncome) : loggedIn;
 
-  const moneyOut = input.expenses
-    .filter((e) => inCurrentMonth(e.date, monthStart, today))
+  const monthExpenses = input.expenses.filter((e) =>
+    inCurrentMonth(e.date, monthStart, today),
+  );
+  const moneyOut = monthExpenses
+    .filter((e) => !e.debtId)
+    .reduce((s, e) => s + e.amount, 0);
+  const debtPaidThisMonth = monthExpenses
+    .filter((e) => Boolean(e.debtId))
     .reduce((s, e) => s + e.amount, 0);
 
   const spendPot = Math.max(0, input.settings.spendPotAmount ?? 0);
@@ -130,6 +138,7 @@ export function buildMonthPlan(input: {
   const debtMinimums = input.budget.minimumPayments;
   const debtExtra = input.budget.availableExtra;
   const payDebtsThisMonth = debtMinimums + debtExtra;
+  const debtStillToReserve = Math.max(0, payDebtsThisMonth - debtPaidThisMonth);
 
   // After locking save + debt, this is what is left for day-to-day spending.
   const spendSuggested = Math.max(0, Math.round(moneyIn - saveThisMonth - payDebtsThisMonth));
@@ -142,8 +151,8 @@ export function buildMonthPlan(input: {
     ? spendPot
     : (countSpend ? spendPot : 0) +
       (countSave ? saveThisMonth : 0) +
-      (countDebt ? payDebtsThisMonth : 0);
-  // Pot-only: expenses eat the spend pot. Otherwise: income minus out minus selected pots.
+      (countDebt ? debtStillToReserve : 0);
+  // Pot-only: day-to-day expenses eat the spend pot. Debt payments are separate.
   const leftToSpend = againstPotOnly ? spendPot - moneyOut : moneyIn - moneyOut - reserved;
 
   const activeDebts = input.debts.filter((d) => !d.archivedAt && d.balance > 0);
@@ -194,6 +203,7 @@ export function buildMonthPlan(input: {
     savedTotal,
     saveSuggested,
     payDebtsThisMonth,
+    debtPaidThisMonth,
     debtMinimums,
     debtExtra,
     leftToSpend,

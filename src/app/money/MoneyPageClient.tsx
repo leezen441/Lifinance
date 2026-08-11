@@ -29,6 +29,7 @@ export default function MoneyPageClient() {
     expenses,
     incomes,
     categories,
+    debts,
     monthPlan,
     settings,
     updateSettings,
@@ -36,6 +37,7 @@ export default function MoneyPageClient() {
     removeIncome,
     addExpense,
     addIncome,
+    payDebt,
   } = useFinance();
   const { t, lang, money, dayMonth } = useI18n();
   const { toast } = useToast();
@@ -46,11 +48,16 @@ export default function MoneyPageClient() {
   const [spendPotOpen, setSpendPotOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [editingIncome, setEditingIncome] = useState<IncomeEntry | null>(null);
+  const [payDebtId, setPayDebtId] = useState<string | undefined>();
 
   useEffect(() => {
     const action = search.get("action");
+    const debt = search.get("debt") ?? undefined;
     if (action === "in") setIncomeOpen(true);
-    if (action === "out") setExpenseOpen(true);
+    if (action === "out") {
+      setPayDebtId(debt);
+      setExpenseOpen(true);
+    }
   }, [search]);
 
   const today = todayISO();
@@ -98,14 +105,24 @@ export default function MoneyPageClient() {
     toast(`${t("expenses.deleted")} · ${money(expense.amount)}`, {
       action: {
         label: t("common.undo"),
-        onClick: () =>
-          addExpense({
-            categoryId: expense.categoryId,
-            amount: expense.amount,
-            note: expense.note,
-            date: expense.date,
-            recurrence: expense.recurrence,
-          }),
+        onClick: () => {
+          if (expense.debtId) {
+            payDebt({
+              debtId: expense.debtId,
+              amount: expense.amount,
+              date: expense.date,
+              note: expense.note,
+            });
+          } else {
+            addExpense({
+              categoryId: expense.categoryId,
+              amount: expense.amount,
+              note: expense.note,
+              date: expense.date,
+              recurrence: expense.recurrence,
+            });
+          }
+        },
       },
       duration: 6000,
     });
@@ -286,6 +303,7 @@ export default function MoneyPageClient() {
           className="w-full"
           onClick={() => {
             setEditingExpense(null);
+            setPayDebtId(undefined);
             setExpenseOpen(true);
           }}
         >
@@ -366,24 +384,28 @@ export default function MoneyPageClient() {
 
                       const entry = row.entry;
                       const category = categories.find((c) => c.id === entry.categoryId);
+                      const debtName = entry.debtId
+                        ? debts.find((d) => d.id === entry.debtId)?.name
+                        : null;
                       return (
                         <li key={row.id} className="group flex items-center gap-1">
                           <button
                             type="button"
                             onClick={() => {
                               setEditingExpense(entry);
+                              setPayDebtId(entry.debtId);
                               setExpenseOpen(true);
                             }}
                             className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2.5 text-left transition-colors hover:bg-surface-2"
                           >
                             <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-bold uppercase text-muted">
-                              {t("worlds.tagOut")}
+                              {entry.debtId ? t("expenses.kindDebt") : t("worlds.tagOut")}
                             </span>
                             <span className="text-base leading-none">
-                              {category?.emoji ?? "•"}
+                              {entry.debtId ? "💳" : (category?.emoji ?? "•")}
                             </span>
                             <span className="min-w-0 flex-1 truncate text-[13px]">
-                              {categoryLabel(category, lang)}
+                              {debtName ?? categoryLabel(category, lang)}
                               {entry.note ? (
                                 <span className="text-muted"> · {entry.note}</span>
                               ) : null}
@@ -419,8 +441,10 @@ export default function MoneyPageClient() {
         onClose={() => {
           setExpenseOpen(false);
           setEditingExpense(null);
+          setPayDebtId(undefined);
         }}
         editing={editingExpense}
+        initialDebtId={payDebtId}
       />
       <AddIncomeSheet
         open={incomeOpen}

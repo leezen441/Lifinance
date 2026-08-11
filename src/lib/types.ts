@@ -73,6 +73,8 @@ export interface Expense {
   createdAt: string;
   /** Rent/subscriptions: counted once per month, not per occurrence. */
   recurrence: "none" | "monthly";
+  /** When set, this money-out was a payment toward that debt pot. */
+  debtId?: string;
 }
 
 /** Money that landed in the account — salary or anything else. */
@@ -102,7 +104,14 @@ export interface Debt {
   /** Day of month the payment is due, 1–31. */
   dueDay?: number;
   createdAt: string;
+  /** Set when the balance hits zero — keeps the win in history. */
   archivedAt?: string;
+  /** Cumulative payments applied via Spend → pay debt. */
+  paidTotal?: number;
+  /** Cumulative simple daily interest added to the balance. */
+  interestAccrued?: number;
+  /** Last calendar day (`YYYY-MM-DD`) interest was accrued through. */
+  lastInterestDate?: string;
 }
 
 export interface Goal {
