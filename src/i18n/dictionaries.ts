@@ -74,7 +74,7 @@ export const en = {
     payNthN: "Pay #{n}",
     payOrderHint: "Pay the minimum on every debt. Put every extra baht on #1.",
     whyOrder: "Why this order?",
-    focusPay: "Send this much to #{name}",
+    focusPay: "Send this much to {name}",
     debtFreeOn: "Debt-free around {date}",
     noDebtsYet: "No debts yet — nice. Add one if you have any.",
     emergencySuggest: "Start with a small emergency pot — money for surprises.",

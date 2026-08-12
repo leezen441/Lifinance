@@ -27,9 +27,18 @@ import type {
 } from "./types";
 import { DAYS_PER_MONTH, daysBetween, fromISODate, todayISO, toISODate, addDays } from "./date";
 import { totalMinimums } from "./debt-engine";
+import { DEBT_PAYMENT_CATEGORY_ID } from "./debt-interest";
 
 /** Below this many days of history the averages are noise, not signal. */
 const MIN_TRUSTED_DAYS = 10;
+
+/**
+ * A logged debt payment. Linked payments carry `debtId`; the category check
+ * catches rows entered straight into the debt-payment category by hand.
+ */
+export function isDebtPayment(expense: Expense): boolean {
+  return Boolean(expense.debtId) || expense.categoryId === DEBT_PAYMENT_CATEGORY_ID;
+}
 
 /**
  * Days of tracking after which real data fully replaces the assessment
@@ -58,7 +67,22 @@ export function buildSpendProfile(
   const cutoffISO = toISODate(cutoff);
   const today = todayISO(now);
 
-  const inWindow = expenses.filter((e) => e.date >= cutoffISO && e.date <= today);
+  /**
+   * Debt payments are NOT living expenses.
+   *
+   * Paying down a balance is a transfer, not consumption — it moves money from
+   * cash to a liability. Counting it here was doubly wrong: the budget already
+   * subtracts `minimumPayments`, so it was deducted twice, and a one-off
+   * payment got extrapolated into a permanent monthly cost.
+   *
+   * The visible result was the app punishing the user for paying: a ฿10,000
+   * payment cut projected capacity by ฿5,073/mo and pushed the debt-free date
+   * four months *later*. Interest is a real cost, but the debt engine already
+   * models it — it must not be double-charged as spending too.
+   */
+  const livingExpenses = expenses.filter((e) => !isDebtPayment(e));
+
+  const inWindow = livingExpenses.filter((e) => e.date >= cutoffISO && e.date <= today);
 
   // How much history do we actually have? A user three days in should not be
   // told their monthly spend based on three days of coffee.
@@ -142,13 +166,15 @@ export function buildSpendProfile(
   }
   byCategory.sort((a, b) => b.monthlyAvg - a.monthlyAvg);
 
-  const todayTotal = expenses
+  // `livingExpenses` throughout, so a day you clear ฿10,000 off a card does not
+  // read as a ฿10,000 spending blowout.
+  const todayTotal = livingExpenses
     .filter((e) => e.date === today)
     .reduce((s, e) => s + e.amount, 0);
 
   const last7 = Array.from({ length: 7 }, (_, i) => {
     const date = toISODate(addDays(now, -(6 - i)));
-    const total = expenses
+    const total = livingExpenses
       .filter((e) => e.date === date && e.recurrence !== "monthly")
       .reduce((s, e) => s + e.amount, 0);
     return { date, total };
@@ -253,7 +279,14 @@ export function monthPace(
   const monthStart = toISODate(new Date(now.getFullYear(), now.getMonth(), 1));
   const today = todayISO(now);
   const spent = expenses
-    .filter((e) => e.date >= monthStart && e.date <= today && e.recurrence !== "monthly")
+    .filter(
+      (e) =>
+        e.date >= monthStart &&
+        e.date <= today &&
+        e.recurrence !== "monthly" &&
+        // Clearing a card is not overspending.
+        !isDebtPayment(e),
+    )
     .reduce((s, e) => s + e.amount, 0);
 
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();

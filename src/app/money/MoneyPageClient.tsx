@@ -10,6 +10,7 @@ import { Label, MoneyInput, Toggle } from "@/components/ui/Field";
 import { Sheet } from "@/components/ui/Sheet";
 import { AddExpenseSheet } from "@/components/expenses/AddExpenseSheet";
 import { AddIncomeSheet } from "@/components/money/AddIncomeSheet";
+import { BudgetAdvice } from "@/components/dashboard/BudgetAdvice";
 import { useFinance } from "@/store/FinanceProvider";
 import { useI18n } from "@/i18n/I18nProvider";
 import { categoryLabel } from "@/lib/category";
@@ -311,6 +312,10 @@ export default function MoneyPageClient() {
           {t("worlds.addExpense")}
         </Button>
       </div>
+
+      {/* "How much should I spend this month" belongs in the Spend world:
+          Home stays the three-envelope summary, detail lives here. */}
+      <BudgetAdvice />
 
       <Card>
         <h2 className="mb-3 text-[14px] font-semibold">{t("worlds.activityTitle")}</h2>

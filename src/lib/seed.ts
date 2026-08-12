@@ -103,6 +103,16 @@ export function demoState(now: Date = new Date()): AppState {
   const categories = buildCategories();
   const catId = (key: string) => `cat_${key}`;
 
+  /**
+   * `lastInterestDate` must be today on every seeded debt.
+   *
+   * Interest accrual runs from `lastInterestDate`, falling back to `createdAt`.
+   * These balances are authored as *today's* balances, so without this the
+   * loader back-charges the full age of each debt — 420 days on the Visa alone
+   * — and the demo opens ~21% deeper in debt than it was written to be.
+   */
+  const asOf = toISODate(now);
+
   const debts: Debt[] = [
     {
       id: "debt_visa",
@@ -114,6 +124,7 @@ export function demoState(now: Date = new Date()): AppState {
       minPayment: 3_500,
       dueDay: 15,
       createdAt: toISODate(addDays(now, -420)),
+      lastInterestDate: asOf,
     },
     {
       id: "debt_kbank",
@@ -125,6 +136,7 @@ export function demoState(now: Date = new Date()): AppState {
       minPayment: 4_800,
       dueDay: 5,
       createdAt: toISODate(addDays(now, -600)),
+      lastInterestDate: asOf,
     },
     {
       id: "debt_phone",
@@ -136,6 +148,7 @@ export function demoState(now: Date = new Date()): AppState {
       minPayment: 2_100,
       dueDay: 20,
       createdAt: toISODate(addDays(now, -270)),
+      lastInterestDate: asOf,
     },
   ];
 

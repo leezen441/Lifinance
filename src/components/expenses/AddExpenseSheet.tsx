@@ -97,6 +97,9 @@ export function AddExpenseSheet({
   const progressAfter =
     selectedDebt && value > 0
       ? debtProgress({
+          // principal is part of the yardstick, so the preview has to carry it
+          // or the "after paying" bar jumps to a different scale.
+          principal: selectedDebt.principal,
           balance: Math.max(0, selectedDebt.balance - value),
           paidTotal: (selectedDebt.paidTotal ?? 0) + Math.min(value, selectedDebt.balance),
           archivedAt: value >= selectedDebt.balance ? todayISO() : undefined,

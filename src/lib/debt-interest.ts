@@ -72,13 +72,29 @@ export function accrueAllDebts(debts: Debt[], asOf: string = todayISO()): Debt[]
   return changed ? next : debts;
 }
 
-/** Progress toward clearing: payments / (payments + still owed). */
-export function debtProgress(debt: Pick<Debt, "balance" | "paidTotal" | "archivedAt">): number {
+/**
+ * How far through this debt you are, 0–1.
+ *
+ * One definition, used by every screen. Two were in play before and they
+ * disagreed badly — the same card read 31.3% on Home and 14.6% on the Debts
+ * page, because one measured against the original borrowing and the other
+ * counted only payments logged inside the app.
+ *
+ * The yardstick is whichever is larger: what was originally borrowed, or
+ * everything that has actually moved through the debt (still owed + repaid).
+ * Taking the max matters at both ends — measuring against payments alone shows
+ * 0% for a debt you imported halfway through paying off, and measuring against
+ * the original alone shows negative progress once interest outgrows it.
+ */
+export function debtProgress(
+  debt: Pick<Debt, "balance" | "principal" | "paidTotal" | "archivedAt">,
+): number {
   if (debt.archivedAt || debt.balance <= EPSILON) return 1;
   const paid = Math.max(0, debt.paidTotal ?? 0);
-  const denom = paid + Math.max(0, debt.balance);
+  const balance = Math.max(0, debt.balance);
+  const denom = Math.max(debt.principal ?? 0, balance + paid);
   if (denom <= EPSILON) return 1;
-  return Math.min(1, paid / denom);
+  return Math.min(1, Math.max(0, (denom - balance) / denom));
 }
 
 export interface ApplyPaymentResult {

@@ -20,6 +20,7 @@ import type {
   StrategyComparison,
 } from "./types";
 import { addMonths, isoMonthStart } from "./date";
+import { DAYS_PER_YEAR } from "./debt-interest";
 
 /** Simulating past this means the plan is not a plan. */
 const MAX_MONTHS = 720; // 60 years
@@ -36,10 +37,23 @@ interface Working {
   payoffMonth: number | null;
 }
 
-/** Monthly interest for one period. Simple APR/12 — matches how most cards quote. */
+/**
+ * Interest for one month of the projection.
+ *
+ * Must agree with `accrueDebtToDate`, which charges real balances APR/365 every
+ * day and adds it back — i.e. daily compounding. A flat APR/12 assumes monthly
+ * compounding, which grows slower: on ฿100,000 at 20% left untouched for a
+ * year, APR/12 predicts ฿121,939 while the balance actually reaches ฿122,134.
+ * The projection was quietly optimistic by ~0.16%/yr.
+ *
+ * So the monthly factor here is the daily rate compounded over an average
+ * month, which makes forecast and reality the same model.
+ */
 export function monthlyInterest(balance: number, apr: number): number {
   if (balance <= 0 || apr <= 0) return 0;
-  return (balance * apr) / 100 / 12;
+  const dailyRate = apr / 100 / DAYS_PER_YEAR;
+  const monthlyRate = Math.pow(1 + dailyRate, DAYS_PER_YEAR / 12) - 1;
+  return balance * monthlyRate;
 }
 
 /**
@@ -346,13 +360,23 @@ export function totalDebt(debts: Debt[]): number {
   return debts.filter((d) => !d.archivedAt).reduce((s, d) => s + d.balance, 0);
 }
 
-/** Share of the original borrowing already repaid, 0–1. */
+/**
+ * Progress across every open debt, 0–1.
+ *
+ * Same yardstick as the per-debt `debtProgress`, summed, so Home and the Debts
+ * page can never disagree about how far along you are.
+ */
 export function overallProgress(debts: Debt[]): number {
   const open = debts.filter((d) => !d.archivedAt);
-  const principal = open.reduce((s, d) => s + Math.max(d.principal, d.balance), 0);
-  if (principal <= 0) return 0;
-  const balance = open.reduce((s, d) => s + d.balance, 0);
-  return clamp01(1 - balance / principal);
+  let denom = 0;
+  let balance = 0;
+  for (const d of open) {
+    const paid = Math.max(0, d.paidTotal ?? 0);
+    denom += Math.max(d.principal ?? 0, d.balance + paid);
+    balance += Math.max(0, d.balance);
+  }
+  if (denom <= 0) return 0;
+  return clamp01(1 - balance / denom);
 }
 
 /** Weighted average APR — the single number that says "how bad is this debt". */

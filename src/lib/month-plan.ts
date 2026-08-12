@@ -135,9 +135,25 @@ export function buildMonthPlan(input: {
   const savedTotal = savedFromGoals(input.goals);
   const saveSuggested = Math.max(0, input.recommendation.savings);
 
-  const debtMinimums = input.budget.minimumPayments;
-  const debtExtra = input.budget.availableExtra;
-  const payDebtsThisMonth = debtMinimums + debtExtra;
+  const activeDebts = input.debts.filter((d) => !d.archivedAt && d.balance > 0);
+
+  /**
+   * `budget.availableExtra` is *capacity to overpay*, not an amount owed. With
+   * no debts it equals almost the whole income, so filing it under "pay debts"
+   * showed a brand-new user their salary as a pile of debt — and reserved it
+   * away from the spend envelope, leaving only the safety buffer to live on.
+   *
+   * Capacity only becomes a debt payment when there is a debt to send it to,
+   * and it is capped at what is actually owed: overpaying a ฿5,000 card by
+   * ฿40,000 is the same category of nonsense, just less obvious.
+   */
+  const totalOwed = activeDebts.reduce((s, d) => s + d.balance, 0);
+  const debtMinimums = activeDebts.length > 0 ? input.budget.minimumPayments : 0;
+  const debtExtra =
+    activeDebts.length > 0
+      ? Math.max(0, Math.min(input.budget.availableExtra, totalOwed - debtMinimums))
+      : 0;
+  const payDebtsThisMonth = Math.min(debtMinimums + debtExtra, totalOwed);
   const debtStillToReserve = Math.max(0, payDebtsThisMonth - debtPaidThisMonth);
 
   // After locking save + debt, this is what is left for day-to-day spending.
@@ -155,7 +171,6 @@ export function buildMonthPlan(input: {
   // Pot-only: day-to-day expenses eat the spend pot. Debt payments are separate.
   const leftToSpend = againstPotOnly ? spendPot - moneyOut : moneyIn - moneyOut - reserved;
 
-  const activeDebts = input.debts.filter((d) => !d.archivedAt && d.balance > 0);
   const orderedDetails = [...input.plan.perDebt].sort((a, b) => {
     if (a.payoffMonth === null) return 1;
     if (b.payoffMonth === null) return -1;
@@ -174,13 +189,16 @@ export function buildMonthPlan(input: {
       if (!debt) return null;
       const detail = input.plan.perDebt.find((p) => p.debtId === debtId);
       const isFocus = debt.id === focusDebtId;
-      const extra = isFocus ? debtExtra : 0;
+      // Never tell someone to send more than the debt is worth — a 3,000 min
+      // on a 400 remaining balance should read 400.
+      const minPayment = Math.min(debt.minPayment, debt.balance);
+      const extra = isFocus ? Math.max(0, Math.min(debtExtra, debt.balance - minPayment)) : 0;
       return {
         rank: index + 1,
         debtId: debt.id,
         name: debt.name,
-        payThisMonth: debt.minPayment + extra,
-        minPayment: debt.minPayment,
+        payThisMonth: minPayment + extra,
+        minPayment,
         extra,
         balance: debt.balance,
         apr: debt.apr,

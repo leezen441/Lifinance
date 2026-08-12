@@ -11,10 +11,11 @@ import {
   compareStrategies,
   extraNeededForTarget,
   monthlyInterest,
+  overallProgress,
   simulatePayoff,
   totalMinimums,
 } from "../debt-engine";
-import { buildSpendProfile, computeBudget } from "../budget-engine";
+import { buildSpendProfile, computeBudget, monthPace } from "../budget-engine";
 import { DEFAULT_ANSWERS, estimateMonthly, estimateTotal } from "../assessment";
 import { buildMonthPlan } from "../month-plan";
 import { evalMoneyExpression } from "../money-expr";
@@ -44,10 +45,39 @@ function debt(over: Partial<Debt> & { id: string }): Debt {
   };
 }
 
-test("interest accrues at APR/12", () => {
-  assert.equal(monthlyInterest(12_000, 12), 120);
+test("projected interest matches the daily accrual it forecasts", () => {
+  // The projection must use the same model as accrueDebtToDate (APR/365 added
+  // back daily), not a flat APR/12 — otherwise the forecast is systematically
+  // cheaper than the balance the user actually ends up with.
+  const projected = monthlyInterest(12_000, 12);
+  assert.ok(projected > 120, `daily compounding must exceed flat APR/12, got ${projected}`);
+  assert.ok(Math.abs(projected - 120.58) < 0.01, `got ${projected}`);
+
+  // A month of real accrual on the same balance should land in the same place.
+  const daily = 12_000 * (Math.pow(1 + 0.12 / 365, 365 / 12) - 1);
+  assert.ok(Math.abs(projected - daily) < 0.001);
+
   assert.equal(monthlyInterest(0, 20), 0);
   assert.equal(monthlyInterest(5_000, 0), 0);
+});
+
+test("progress is one number, whichever screen asks for it", () => {
+  // Regression: Home read 31.3% while the Debts page read 14.6% for this exact
+  // debt, because they measured against different denominators.
+  const card = debt({ id: "visa", principal: 85_000, balance: 58_400, paidTotal: 10_000 });
+  const perDebt = debtProgress(card);
+  const aggregate = overallProgress([card]);
+  assert.ok(Math.abs(perDebt - aggregate) < 1e-9, `${perDebt} vs ${aggregate}`);
+  assert.ok(Math.abs(perDebt - 0.3129) < 0.001, `got ${perDebt}`);
+
+  // A debt imported mid-life, never paid inside the app, still shows progress.
+  const imported = debt({ id: "old", principal: 100_000, balance: 40_000, paidTotal: 0 });
+  assert.ok(Math.abs(debtProgress(imported) - 0.6) < 1e-9);
+
+  // Interest outgrowing the original shows zero, never negative.
+  const underwater = debt({ id: "bad", principal: 10_000, balance: 12_000, paidTotal: 0 });
+  assert.equal(debtProgress(underwater), 0);
+  assert.equal(overallProgress([underwater]), 0);
 });
 
 test("a single 0% debt clears in exactly balance/payment months", () => {
@@ -474,6 +504,113 @@ test("month plan: left to spend = in − out − save − debt", () => {
   );
   assert.ok(month.payOrder.length >= 1);
   assert.equal(month.payOrder[0].isFocus, true);
+});
+
+test("paying a debt must never reduce payoff capacity", () => {
+  // The invariant that matters: a debt payment is a transfer, not consumption.
+  // It was being counted as an essential living expense *and* double-charged
+  // against the minimums the budget already subtracts, so a ฿10,000 payment
+  // cut capacity by ~฿5,073/mo and pushed the debt-free date months later —
+  // the app punished the user for doing the one thing it exists to encourage.
+  const debts = [debt({ id: "visa", balance: 60_000, apr: 20, minPayment: 3_000 })];
+  const living: Expense[] = [
+    expense({ id: "rent", categoryId: "c_rent", amount: 10_000, date: toISODate(addDays(NOW, -1)), recurrence: "monthly" }),
+  ];
+
+  const before = computeBudget(
+    settings,
+    buildSpendProfile(living, categories, 60, NOW),
+    debts,
+    [],
+  );
+
+  const payment: Expense = {
+    ...expense({ id: "pay", categoryId: "cat_debt_payment", amount: 10_000, date: toISODate(NOW) }),
+    debtId: "visa",
+  };
+  const after = computeBudget(
+    settings,
+    buildSpendProfile([...living, payment], categories, 60, NOW),
+    debts,
+    [],
+  );
+
+  assert.equal(
+    after.availableExtra,
+    before.availableExtra,
+    "logging a debt payment must not change payoff capacity",
+  );
+  assert.equal(after.essentials, before.essentials, "a transfer is not an expense");
+});
+
+test("debt payments are excluded from spending totals and pace", () => {
+  const payment: Expense = {
+    ...expense({ id: "pay", categoryId: "cat_debt_payment", amount: 9_000, date: toISODate(NOW) }),
+    debtId: "visa",
+  };
+  const coffee = expense({ id: "c", categoryId: "c_coffee", amount: 120, date: toISODate(NOW) });
+
+  const profile = buildSpendProfile([payment, coffee], categories, 60, NOW);
+  assert.equal(profile.todayTotal, 120, "clearing a card is not today's spending");
+  assert.equal(profile.last7[6].total, 120);
+
+  const pace = monthPace([payment, coffee], 5_000, NOW);
+  assert.equal(pace.spent, 120, "a card payment must not read as overspending");
+});
+
+test("a new user with no debts is never shown their income as debt", () => {
+  // Regression: `budget.availableExtra` is capacity to overpay, not an amount
+  // owed. Filing it under "pay debts" showed a fresh user their whole salary
+  // as a debt pile and reserved it away from the spend envelope.
+  const profile = buildSpendProfile([], categories, 30, NOW);
+  const budget = computeBudget(settings, profile, [], []);
+  const rec = recommendBudget(settings.monthlyIncome, profile, [], [], () => false);
+  const { plan } = buildPlan([], budget.availableExtra, "avalanche");
+
+  const month = buildMonthPlan({
+    settings,
+    incomes: [],
+    expenses: [],
+    debts: [],
+    goals: [],
+    budget,
+    recommendation: rec,
+    plan,
+    now: NOW,
+  });
+
+  assert.ok(budget.availableExtra > 0, "there is spare capacity to misreport");
+  assert.equal(month.payDebtsThisMonth, 0, "no debts means nothing to pay");
+  assert.equal(month.debtExtra, 0);
+  assert.equal(month.debtMinimums, 0);
+  assert.equal(month.payOrder.length, 0);
+  // The whole income stays spendable rather than being reserved for phantom debt.
+  assert.equal(month.leftToSpend, settings.monthlyIncome);
+});
+
+test("this month's debt payment never exceeds what is actually owed", () => {
+  // 50k income against a 4k balance: capacity far exceeds the debt.
+  const debts = [debt({ id: "a", balance: 4_000, apr: 18, minPayment: 500 })];
+  const profile = buildSpendProfile([], categories, 30, NOW);
+  const budget = computeBudget(settings, profile, debts, []);
+  const rec = recommendBudget(settings.monthlyIncome, profile, debts, [], () => false);
+  const { plan } = buildPlan(debts, budget.availableExtra, "avalanche");
+
+  const month = buildMonthPlan({
+    settings,
+    incomes: [],
+    expenses: [],
+    debts,
+    goals: [],
+    budget,
+    recommendation: rec,
+    plan,
+    now: NOW,
+  });
+
+  assert.ok(budget.availableExtra > 4_000, "capacity exceeds the balance");
+  assert.equal(month.payDebtsThisMonth, 4_000, "capped at the balance");
+  assert.ok(month.payOrder[0].payThisMonth <= 4_000);
 });
 
 test("month plan can ignore save or debt envelopes", () => {

@@ -14,7 +14,7 @@ import { blendedApr, overallProgress, totalDebt } from "@/lib/debt-engine";
  * a date, a countdown, and a bar that moves.
  */
 export function FreedomCard() {
-  const { debts, plan, monthsSaved, interestSaved, budget } = useFinance();
+  const { debts, plan, monthsSaved, interestSaved, monthPlan } = useFinance();
   const { t, money, monthYear, duration, percent } = useI18n();
 
   const owed = totalDebt(debts);
@@ -99,7 +99,10 @@ export function FreedomCard() {
         <span className="text-muted">
           {t("dashboard.extraRow")}{" "}
           <span className="tabular font-semibold text-neon">
-            {money(budget.availableExtra)}
+            {/* monthPlan.debtExtra, not budget.availableExtra: the latter is
+                raw capacity and overstates the figure once it exceeds what is
+                actually owed. */}
+            {money(monthPlan.debtExtra)}
             {t("common.perMonth")}
           </span>
         </span>
